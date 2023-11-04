@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import random
+import warnings
 
 import torch
 import numpy as np
@@ -22,6 +23,7 @@ from PIL import Image
 from datetime import datetime
 import torch.nn.functional as F
 
+warnings.filterwarnings("ignore")
 
 # Stella added
 import wandb

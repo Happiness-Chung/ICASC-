@@ -105,7 +105,7 @@ class ResNet(nn.Module):
         # class number of last blocks.
         if plus == True:
             for i in range(num_classes):
-                self.last_blocks.append(self._make_layer(block, 512, num_block[3], 2, "conv5_" + str(i) + "_x", last=True).cuda())
+                self.last_blocks.append(self._make_layer(block, 1, num_block[3], 2, "conv5_" + str(i) + "_x", last=True).cuda())
             self.last_blocks = nn.ModuleList(self.last_blocks)
             self.fc = nn.Linear( num_classes * 512 * block.expansion, num_classes)
 

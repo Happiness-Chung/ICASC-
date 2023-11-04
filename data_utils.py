@@ -68,13 +68,14 @@ def get_datasets(name):
         train = datasets.STL10(root='./data/', split='train', download=False, transform=transform_train)
         test = datasets.STL10(root='./data/', split='test', download=False, transform=transform_test)
     elif name == 'CheXpert':
+        sampling_num = 86336
         normalize = transforms.Normalize(mean=[mean],
                                  std=[var])
         transform = transforms.Compose([
                                     transforms.Resize([150,150]),
                                     transforms.ToTensor(),
                                     normalize])
-        train = ChexpertTrainDataset(transform=transform, indices=list(range(86336)))
+        train = ChexpertTrainDataset(transform=transform, indices=list(range(sampling_num)))
         test = ChexpertTestDataset(transform=transform)
     
     unorm = UnNormalize(mean, var)

@@ -230,10 +230,11 @@ class SFOCUS(nn.Module):
                 A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 512 x 38 x 38
                 
                 # last block
+                sample_length = len(self.backward_features['last_blocks0'])
                 if self.dataset == 'CheXpert':
                     last_size = 19
-                backward_feature = torch.zeros((32, 512, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((32, 512, last_size, last_size), dtype=torch.float32).cuda()
+                backward_feature = torch.zeros((sample_length, 512, last_size, last_size), dtype=torch.float32).cuda()
+                forward_feature = torch.zeros((sample_length, 512, last_size, last_size), dtype=torch.float32).cuda()
                 bw_loss = 0
                 
                 for i in range(len(labels)):
@@ -244,7 +245,9 @@ class SFOCUS(nn.Module):
                             bw_loss += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
                 bw_loss /= len(labels)
 
+
                 for i in range(self.num_classes):
+                    # print(self.backward_features['last_blocks' + str(i)].size())
                     backward_feature += self.backward_features['last_blocks' + str(i)]
                     forward_feature += self.feed_forward_features['last_blocks' + str(i)]
 
