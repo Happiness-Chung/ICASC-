@@ -334,17 +334,26 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
                   'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    i, len(val_loader), batch_time=batch_time, loss=losses,
                    top1=top1, top5=top5))
-    wandb.log({
-        "Valid loss":losses.avg,
-        "Valid Top 1 ACC":top1.avg,
-        "Valid Top 5 ACC":top5.avg,
-    })   
-    
-    print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-            .format(top1=top1, top5=top5))
-    f = open(dir + "/performance.txt", "a")
-    f.write(str(top1.avg.item()) + "\n")
-    f.close()
+
+    if args.dataset == 'ImageNet':
+        print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
+                .format(top1=top1, top5=top5))
+        wandb.log({
+            "Valid loss":losses.avg,
+            "Valid Top 1 ACC":top1.avg,
+            "Valid Top 5 ACC":top5.avg,
+        })   
+        f = open(dir + "/performance.txt", "a")
+        f.write(str(top1.avg.item()) + "\n")
+        f.close()
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC': 
+        auc = roc_auc_score(gt, probs)
+        print("Training AUC: {}". format(auc))
+        wandb.log({
+        "Epoch":epoch,
+        "Train loss":losses.avg,
+        "AUC":auc,
+        })   
 
     return top1.avg
 

@@ -244,6 +244,7 @@ class SFOCUS(nn.Module):
                         else:
                             bw_loss += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
                 bw_loss /= len(labels)
+                bw_loss = nn.Sigmoid(bw_loss)
 
 
                 for i in range(self.num_classes):
