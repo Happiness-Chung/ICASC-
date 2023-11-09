@@ -224,51 +224,60 @@ class SFOCUS(nn.Module):
             if self.plus == True:
                 self.populate_grads(logits, labels)
                 # inner block
-                backward_feature = self.backward_features[self.grad_layers[0]]
-                forward_feature  = self.feed_forward_features[self.grad_layers[0]]
-                weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 512 x 38 x 38
+                # backward_feature = self.backward_features[self.grad_layers[0]]
+                # forward_feature  = self.feed_forward_features[self.grad_layers[0]]
+                # weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                # A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 512 x 38 x 38
                 
-                # last block
-                sample_length = len(self.backward_features['last_blocks0'])
-                if self.dataset == 'CheXpert':
-                    last_size = 19
-                backward_feature = torch.zeros((sample_length, 512, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((sample_length, 512, last_size, last_size), dtype=torch.float32).cuda()
+                # # last block
+                # sample_length = len(self.backward_features['last_blocks0'])
+                # if self.dataset == 'CheXpert':
+                #     last_size = 19
+                # backward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
+                # forward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
                 bw_loss = 0
                 
                 for i in range(len(labels)):
                     for j in range(self.num_classes):
                         if labels[i][j] == 1:
                             bw_loss -= torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
-                        else:
-                            bw_loss += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
-                bw_loss /= len(labels)
-                bw_loss = nn.Sigmoid(bw_loss)
 
+                # for i in range(self.num_classes):
+                #     # print(self.backward_features['last_blocks' + str(i)].size())
+                #     backward_feature += self.backward_features['last_blocks' + str(i)]
+                #     forward_feature += self.feed_forward_features['last_blocks' + str(i)]
 
-                for i in range(self.num_classes):
-                    # print(self.backward_features['last_blocks' + str(i)].size())
-                    backward_feature += self.backward_features['last_blocks' + str(i)]
-                    forward_feature += self.feed_forward_features['last_blocks' + str(i)]
+                # backward_feature /= self.num_classes
+                # forward_feature /= self.num_classes
+                # weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                # A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
 
-                backward_feature /= self.num_classes
-                forward_feature /= self.num_classes
-                weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                # mask = F.interpolate(A_t_la, size=(38, 38), mode='bilinear', align_corners=False)
+                # At_min = mask.min().detach()
+                # At_max = mask.max().detach()
+                # scaled_At = (mask - At_min)/(At_max - At_min)
+                # sigma = 0.25 * At_max
+                # omega = 100.
+                # mask = F.sigmoid(omega*(scaled_At-sigma))
 
-                mask = F.interpolate(A_t_la, size=(38, 38), mode='bilinear', align_corners=False)
-                At_min = mask.min().detach()
-                At_max = mask.max().detach()
-                scaled_At = (mask - At_min)/(At_max - At_min)
-                sigma = 0.25 * At_max
-                omega = 100.
-                mask = F.sigmoid(omega*(scaled_At-sigma))
-
-                L_ac_in = self.loss_attention_consistency(A_t_in, mask)
+                # L_ac_in = self.loss_attention_consistency(A_t_in, mask)
+                L_ac_in = 0
                 L_as_la = 0
                 L_as_in = 0
                 A_conf_la = 0
+                A_t_la = 0
+
+                labels = torch.ones((64, 10), dtype=torch.float32).cuda() - labels
+                self.populate_grads(logits, labels)
+                for i in range(len(labels)):
+                    for j in range(self.num_classes):
+                        if labels[i][j] == 1:
+                            bw_loss += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
+
+                bw_loss /= len(labels)
+                sigmoid =  nn.Sigmoid()
+                bw_loss = sigmoid(bw_loss)
+                
 
         # predictions, Loss AS_last_layer, Loss AS_in_layer, Loss AC_in_layer, heatmap as per paper
         if self.plus == False:

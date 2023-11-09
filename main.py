@@ -38,7 +38,7 @@ parser.add_argument('--ngpu', default=1, type=int, metavar='G',
                     help='number of gpus to use')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=100, type=int, metavar='N',
+parser.add_argument('--epochs', default= 4, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--milestones', type=int, default=[50,100], nargs='+', help='LR decay milestones')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -53,7 +53,7 @@ parser.add_argument('--weight_decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--print-freq', '-p', default=100, type=int,
                     metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default=None, type=str, metavar='PATH',
+parser.add_argument('--resume', default=True, type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)') # 설명상 default가 None이라서 그렇게 바꿨습니다
 parser.add_argument("--seed", type=int, default=1234, metavar='BS', help='input batch size for training (default: 64)')
 parser.add_argument("--prefix", default="Result", type=str, required=False, metavar='PFX', help='prefix for logging & checkpoint saving')
@@ -61,7 +61,7 @@ parser.add_argument('--evaluate',default=False, dest='evaluate', action='store_t
 best_prec1 = 0
 
 # Stella added
-parser.add_argument('--base_path', default = 'C:Users/rhtn9', type=str, help='base path for Stella (you have to change)')
+parser.add_argument('--base_path', default = 'History', type=str, help='base path for Stella (you have to change)')
 parser.add_argument('--wandb_key', default='c07987db95186aade1f1dd62754c86b4b6db5af6', type=str, help='wandb key for Stella (you have to change). You can get it from https://wandb.ai/authorize')
 parser.add_argument('--wandb_mode', default='online', type=str, choices=['online', 'offline'], help='tracking with wandb or turn it off')
 parser.add_argument('--wandb_user', default='hphp', type=str, help='your wandb username (you have to change)')
@@ -85,7 +85,7 @@ def main():
     wandb.init(project=args.wandb_project, entity=args.wandb_user, reinit=True, name=args.experiment_name)
 
     now = datetime.now()
-    result_dir = os.path.join(base_path, "Results/{}_{}H".format(now.date(), str(now.hour)))
+    result_dir = os.path.join(base_path, "{}_{}H".format(now.date(), str(now.hour)))
     os.makedirs(result_dir, exist_ok=True)
     c = open(result_dir + "/config.txt", "w")
     c.write("plus: {}, dataset: {}, epochs: {}, lr: {}, momentum: {},  weight-decay: {}, seed: {}".format(args.plus, args.dataset, str(args.epochs), str(args.lr), str(args.momentum),str(args.weight_decay), str(args.seed)))
@@ -126,7 +126,7 @@ def main():
 
     # optionally resume from a checkpoint
     if args.resume:
-        model.load_state_dict(torch.load(os.path.join(base_path, 'Results/2023-10-31_10H/model.pth')))
+        model.load_state_dict(torch.load(os.path.join(base_path, '2023-11-06_9H/model.pth')))
 
     cudnn.benchmark = True
 
@@ -353,7 +353,10 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         "Epoch":epoch,
         "Train loss":losses.avg,
         "AUC":auc,
-        })   
+        })
+        f = open(dir + "/performance.txt", "a")
+        f.write(str(auc) + "\n")
+        f.close()   
 
     return top1.avg
 

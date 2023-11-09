@@ -23,7 +23,7 @@ import numpy as np
 import cv2
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('--dataset', default='cifar10' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
+parser.add_argument('--dataset', default='CheXpert' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
 parser.add_argument('--plus', default= True, type=str, 
                     help='whether apply icasc++')
 parser.add_argument('--ngpu', default=1, type=int, metavar='G',
@@ -66,7 +66,7 @@ def main():
     
     train_dataset, val_dataset, num_classes, unorm = get_datasets(args.dataset)
     # create model
-    model = sfocus18(num_classes, pretrained=False, plus=args.plus)
+    model = sfocus18(args.dataset, num_classes, pretrained=False, plus=args.plus)
 
     model = torch.nn.DataParallel(model, device_ids=list(range(args.ngpu)))
     #model = torch.nn.DataParallel(model).cuda()
@@ -77,7 +77,7 @@ def main():
         sum([p.data.nelement() for p in model.parameters()])))
 
     # optionally resume from a checkpoint
-    model.load_state_dict(torch.load('C:/Users/rhtn9/Results/2023-11-01_19H/model.pth'))
+    model.load_state_dict(torch.load('History/2023-11-08_10H/model.pth'))
 
     cudnn.benchmark = True
 
@@ -89,8 +89,9 @@ def main():
 
 def save_cam(grad_cam_map, index, conf = False):
 
+    # print(grad_cam_map)
     grad_cam_map = grad_cam_map[0].unsqueeze(dim=0)
-    grad_cam_map = F.interpolate(grad_cam_map, size=(32, 32), mode='bilinear', align_corners=False) # (1, 1, W, H)
+    grad_cam_map = F.interpolate(grad_cam_map, size=(150, 150), mode='bilinear', align_corners=False) # (1, 1, W, H)
     map_min, map_max = grad_cam_map.min(), grad_cam_map.max()
     grad_cam_map = (grad_cam_map - map_min).div(map_max - map_min).data # (1, 1, W, H), min-max scaling
     
@@ -104,7 +105,7 @@ def save_cam(grad_cam_map, index, conf = False):
     # grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
 
     if conf == False:
-        save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus/result{}_true.png'.format(index))
+        save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus/result{}_true_false.png'.format(index))
     else:
         save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus/result{}_conf.png'.format(index))
 
@@ -130,7 +131,7 @@ def validate(val_loader, model):
         
         save_image(inputs[0], 'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/imgs/{}.jpg'.format(i))
         save_cam(hmaps, i)
-        save_cam(hmaps_conf, i, conf=True)
+        # save_cam(hmaps_conf, i, conf=True)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
