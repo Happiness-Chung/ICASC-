@@ -21,6 +21,7 @@ from datetime import datetime
 import torch.nn.functional as F
 import numpy as np
 import cv2
+import math
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--dataset', default='CheXpert' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
@@ -77,7 +78,7 @@ def main():
         sum([p.data.nelement() for p in model.parameters()])))
 
     # optionally resume from a checkpoint
-    model.load_state_dict(torch.load('History/2023-11-08_10H/model.pth'))
+    model.load_state_dict(torch.load('History/2023-11-14_13H/model.pth'))
 
     cudnn.benchmark = True
 
@@ -86,8 +87,17 @@ def main():
     
     validate(val_loader, model)
 
+def get_hscore(true,false):
+    #print(true.min(), true.max())
+    true = (true - true.min()) / (true.max() - true.min() + 0.0000001)
+    false = (false - false.min()) / (false.max() - false.min() + 0.0000001)
+    #print((torch.abs(2 * true - false) - false))
+    h_score = ((torch.abs(2 * true - false) - false) / (2*150*150) * 100).sum().item()
+    if math.isnan(h_score):
+        h_score = 0
+    return h_score
 
-def save_cam(grad_cam_map, index, conf = False):
+def save_cam(torch_img, grad_cam_map, index, conf = False):
 
     # print(grad_cam_map)
     grad_cam_map = grad_cam_map[0].unsqueeze(dim=0)
@@ -101,13 +111,13 @@ def save_cam(grad_cam_map, index, conf = False):
     b, g, r = grad_heatmap.split(1)
     grad_heatmap = torch.cat([r, g, b]) # (3, 244, 244), opencv's default format is BGR, so we need to change it as RGB format.
 
-    # grad_result = grad_heatmap + torch_img.cpu() # (1, 3, W, H)
-    # grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
+    grad_result = grad_heatmap + torch_img.cpu() # (1, 3, W, H)
+    grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
 
     if conf == False:
-        save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus/result{}_true_false.png'.format(index))
+        save_image(grad_result,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus(parallel)/result{}_true.png'.format(index+150))
     else:
-        save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus/result{}_conf.png'.format(index))
+        save_image(grad_result,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus(parallel)/result{}_false.png'.format(index+150))
 
 def validate(val_loader, model):
       batch_time = AverageMeter()
@@ -115,9 +125,11 @@ def validate(val_loader, model):
       # switch to evaluate mode
       model.eval()
       end = time.time()
+      h_score = 0
       for i, (inputs, target) in enumerate(val_loader):
         
         if i == 50:
+            print("H score: ", h_score / 50)
             break
         
         target = target.cuda()
@@ -129,13 +141,16 @@ def validate(val_loader, model):
         else:
             output, l1, l2, l3, hmaps, hmaps_conf, bw = model(inputs, target)
         
-        save_image(inputs[0], 'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/imgs/{}.jpg'.format(i))
-        save_cam(hmaps, i)
-        # save_cam(hmaps_conf, i, conf=True)
+        #save_image(inputs[0], 'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/imgs/{}.jpg'.format(i+50))
+        save_cam(inputs[0], hmaps, i)
+        save_cam(inputs[0], hmaps_conf, i, conf=True)
+        # h_score += get_hscore(hmaps, hmaps_conf)
+
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
+    
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

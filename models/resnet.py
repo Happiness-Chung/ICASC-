@@ -89,6 +89,7 @@ class ResNet(nn.Module):
         self.in_channels = 64
         self.num_classes = num_classes
         self.last_blocks = []
+        self.plus = plus
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
@@ -177,7 +178,6 @@ class ResNet(nn.Module):
         
         output = output.view(output.size(0), -1)
         output = self.fc(output)
-
         return output 
 
 def resnet18(num_classes, plus):

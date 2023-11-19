@@ -1,5 +1,5 @@
 from torchvision import transforms, datasets
-from datasets import ChexpertTrainDataset, ChexpertTestDataset
+from datasets import ChexpertTrainDataset, ChexpertTestDataset, NIHTestDataset, NIHTrainDataset
 import torchvision
 
 def get_mean_var_classes(name):
@@ -12,6 +12,8 @@ def get_mean_var_classes(name):
        return (0.4467, 0.43980, 0.4066), (0.2603, 0.2565, 0.2712), 10
     if name == 'CheXpert':
         return 0.485, 0.229, 10
+    if name == 'NIH':
+        return (0.485, 0.456, 0.406), (0.229, 0.224, 0.225), 14
     return None
 
 
@@ -31,7 +33,6 @@ class UnNormalize(object):
             t.mul_(s).add_(m)
             # The normalize code -> t.sub_(m).div_(s)
         return tensor
-
 def get_datasets(name):
     mean, var, num_classes = get_mean_var_classes(name)
     if name == 'cifar10':
@@ -74,9 +75,19 @@ def get_datasets(name):
         transform = transforms.Compose([
                                     transforms.Resize([150,150]),
                                     transforms.ToTensor(),
-                                    normalize])
+                                    # normalize
+                                    ])
         train = ChexpertTrainDataset(transform=transform, indices=list(range(sampling_num)))
         test = ChexpertTestDataset(transform=transform)
+    elif name == 'NIH':
+        sampling_num = 86336
+        normalize = transforms.Normalize(mean, var)
+        transform = transforms.Compose([
+                                    transforms.Resize([150,150]),
+                                    transforms.ToTensor(),
+                                    normalize])
+        train = NIHTrainDataset(data_dir='data/NIH', transform= transform, indices=list(range(sampling_num)))
+        test = NIHTestDataset(data_dir='data/NIH', transform= transform)
     
     unorm = UnNormalize(mean, var)
 

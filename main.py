@@ -38,7 +38,7 @@ parser.add_argument('--ngpu', default=1, type=int, metavar='G',
                     help='number of gpus to use')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default= 4, type=int, metavar='N',
+parser.add_argument('--epochs', default= 20, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--milestones', type=int, default=[50,100], nargs='+', help='LR decay milestones')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -53,7 +53,7 @@ parser.add_argument('--weight_decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--print-freq', '-p', default=100, type=int,
                     metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default=True, type=str, metavar='PATH',
+parser.add_argument('--resume', default=False, type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)') # 설명상 default가 None이라서 그렇게 바꿨습니다
 parser.add_argument("--seed", type=int, default=1234, metavar='BS', help='input batch size for training (default: 64)')
 parser.add_argument("--prefix", default="Result", type=str, required=False, metavar='PFX', help='prefix for logging & checkpoint saving')
