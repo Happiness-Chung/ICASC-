@@ -303,6 +303,7 @@ class ChexpertTrainDataset(Dataset):
     def get_class_cnt(self):
         return 10
 
+
 class ChexpertTestDataset(Dataset):
 
     def __init__(self, transform = None):
@@ -330,6 +331,117 @@ class ChexpertTestDataset(Dataset):
             row = self.selecte_data.iloc[i, 2:]
             for j in range(len(row)):
                 total_ds_cnt[j] += int(row[j])
+        return total_ds_cnt
+
+    def __len__(self):
+        return len(self.selecte_data)
+    
+class ADNITrainDataset(Dataset):
+
+    def __init__(self,transform = None, indices = None):
+        
+        csv_path = "/scratch/connectome/stellasybae/ICASC-/metadata_ADNI_T1.csv" ####
+        self.dir = "/scratch/connectome/stellasybae/ICASC-/sliced_ADNI_T1" ####
+        self.transform = transform
+
+        self.all_data = pd.read_csv(csv_path)
+        self.selecte_data = self.all_data.iloc[indices, :] # 0에서 indices까지 cut!
+        self.class_num = 3
+        self.all_classes = ['AD', 'MCI', 'CN']
+        
+        self.total_ds_cnt = self.get_total_cnt()
+        self.total_ds_cnt = np.array(self.total_ds_cnt)
+        # Normalize the imbalance
+        self.imbalance = 0
+        difference_cnt = self.total_ds_cnt - self.total_ds_cnt.mean()
+        for i in range(len(difference_cnt)):
+            difference_cnt[i] = difference_cnt[i] * difference_cnt[i]        
+        for i in range(len(difference_cnt)):
+            difference_cnt[i] = difference_cnt[i] / difference_cnt.sum()
+        # Calculate the level of imbalnce
+        difference_cnt -= difference_cnt.mean()
+        for i in range(len(difference_cnt)):
+            difference_cnt[i] = (difference_cnt[i] * difference_cnt[i])
+    
+        self.imbalance = 1 / difference_cnt.sum()
+
+    def __getitem__(self, index):
+
+        subID = self.selecte_data.iloc[index, :]['subID']
+        diagnosis = self.selecte_data.iloc[index, :]['diagnosis']
+        brain = np.load(os.path.join(self.dir, 'ADNI_T1_sliced_'+subID+'.npy'))
+        if diagnosis == 'CN':
+            label = torch.FloatTensor((1, 0, 0))
+        elif diagnosis == 'MCI':
+            label = torch.FloatTensor((0, 1, 0))
+        elif diagnosis == 'AD':
+            label = torch.FloatTensor((0, 0, 1))
+            
+        
+        image_data = pilimg.fromarray(np.uint8(brain))
+        gray_img = self.transform(image_data) # 일단 해봄..
+        return torch.cat([gray_img,gray_img,gray_img], dim = 0), label
+
+    def __len__(self):
+        return len(self.selecte_data)
+
+    def get_total_cnt(self):
+        total_ds_cnt = [0] * self.class_num
+        diagnosis = [self.selecte_data.iloc[i, 1] for i in range(len(self.selecte_data))]
+        total_ds_cnt[0] = diagnosis.count('CN')
+        total_ds_cnt[1] = diagnosis.count('MCI')
+        total_ds_cnt[2] = diagnosis.count('AD')
+        return total_ds_cnt
+
+    def get_ds_cnt(self):
+
+        raw_pos_freq = self.total_ds_cnt
+        raw_neg_freq = self.total_ds_cnt.sum() - self.total_ds_cnt
+
+        return raw_pos_freq, raw_neg_freq
+
+    def get_name(self):
+        return 'ADNI'
+
+    def get_class_cnt(self):
+        return 3
+    
+    
+class ADNITestDataset(Dataset):
+
+    def __init__(self, transform = None):
+        
+        csv_path = "/scratch/connectome/stellasybae/ICASC-/metadata_ADNI_T1.csv" ####
+        self.dir = "/scratch/connectome/stellasybae/ICASC-/sliced_ADNI_T1" ####
+        self.transform = transform
+
+        self.all_data = pd.read_csv(csv_path)
+        self.selecte_data = self.all_data.iloc[:, :]
+        self.class_num = 10
+
+    def __getitem__(self, index):
+
+        subID = self.selecte_data.iloc[index, :]['subID']
+        diagnosis = self.selecte_data.iloc[index, :]['diagnosis']
+        brain = np.load(os.path.join(self.dir, 'ADNI_T1_sliced_'+subID+'.npy'))
+        if diagnosis == 'CN':
+            label = torch.FloatTensor((1, 0, 0))
+        elif diagnosis == 'MCI':
+            label = torch.FloatTensor((0, 1, 0))
+        elif diagnosis == 'AD':
+            label = torch.FloatTensor((0, 0, 1))
+        
+        image_data = pilimg.fromarray(np.uint8(brain))
+        gray_img = self.transform(image_data)
+
+        return torch.cat([gray_img,gray_img,gray_img], dim = 0), label
+
+    def get_ds_cnt(self):
+        total_ds_cnt = [0] * self.class_num
+        diagnosis = [self.selecte_data.iloc[i, 1] for i in range(len(self.selecte_data))]
+        total_ds_cnt[0] = diagnosis.count('CN')
+        total_ds_cnt[1] = diagnosis.count('MCI')
+        total_ds_cnt[2] = diagnosis.count('AD')
         return total_ds_cnt
 
     def __len__(self):

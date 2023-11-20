@@ -1,5 +1,5 @@
 from torchvision import transforms, datasets
-from datasets import ChexpertTrainDataset, ChexpertTestDataset, NIHTestDataset, NIHTrainDataset
+from datasets import ChexpertTrainDataset, ChexpertTestDataset, NIHTestDataset, NIHTrainDataset, ADNITestDataset, ADNITrainDataset
 import torchvision
 
 def get_mean_var_classes(name):
@@ -14,6 +14,8 @@ def get_mean_var_classes(name):
         return 0.485, 0.229, 10
     if name == 'NIH':
         return (0.485, 0.456, 0.406), (0.229, 0.224, 0.225), 14
+    if name == 'ADNI':
+        return 0.485, 0.229, 3
     return None
 
 
@@ -88,7 +90,15 @@ def get_datasets(name):
                                     normalize])
         train = NIHTrainDataset(data_dir='data/NIH', transform= transform, indices=list(range(sampling_num)))
         test = NIHTestDataset(data_dir='data/NIH', transform= transform)
-    
+    elif name == 'ADNI':
+        sampling_num = int(6354*0.8)
+        normalize = transforms.Normalize(mean, var)
+        transform = transforms.Compose([
+                                    transforms.Resize([150,150]),
+                                    transforms.ToTensor(),
+                                    normalize])
+        train = ADNITrainDataset(transform= transform, indices=list(range(sampling_num)))
+        test = ADNITestDataset(transform= transform)
     unorm = UnNormalize(mean, var)
 
     return train, test, num_classes, unorm

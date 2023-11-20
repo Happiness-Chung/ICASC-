@@ -101,7 +101,7 @@ class SFOCUS(nn.Module):
         # grad_result = grad_heatmap + torch_img.cpu() # (1, 3, W, H)
         # grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
 
-        save_image(grad_heatmap,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/result.png')
+        save_image(grad_heatmap,'/scratch/connectome/stellasybae/ICASC-/result/result.png')
 
     def forward(self, images, labels):
 
@@ -220,7 +220,7 @@ class SFOCUS(nn.Module):
             #Loss Attention Consistency
             L_ac_in = self.loss_attention_consistency(A_t_in, mask_in)
         
-        elif self.dataset == 'CheXpert' or self.dataset == 'MIMIC':
+        elif self.dataset == 'CheXpert' or self.dataset == 'MIMIC' or self.dataset=='ADNI':
             if self.plus == True:
                 sigmoid = nn.Sigmoid()
                 self.populate_grads(5*sigmoid(logits), labels)
@@ -234,6 +234,8 @@ class SFOCUS(nn.Module):
                 sample_length = len(self.backward_features['last_blocks0'])
                 if self.dataset == 'CheXpert':
                     last_size = 19
+                elif self.dataset == 'ADNI':
+                    last_size = 19 ## arbitrary...:( -Stella
                 backward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
                 forward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
                 bw_loss_true = 0
@@ -274,7 +276,11 @@ class SFOCUS(nn.Module):
                 # A_conf_la = 0
                 # A_t_la = 0
 
-                labels = torch.ones((len(labels), 10), dtype=torch.float32).cuda() - labels
+                if self.dataset == 'CheXpert':
+                    num_label=10
+                elif self.dataset == 'ADNI':
+                    num_label=3
+                labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
                 self.populate_grads(5*sigmoid(logits), labels)
                 for i in range(len(labels)):
                     for j in range(self.num_classes):

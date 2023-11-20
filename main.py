@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 import wandb
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('--dataset', default='CheXpert' , help='ImageNet, CheXpert, MIMIC')
+parser.add_argument('--dataset', default='CheXpert' , help='ImageNet, CheXpert, MIMIC, ADNI')
 parser.add_argument('--plus', default=True, type=str, 
                     help='(1) whether apply icasc++')
 parser.add_argument('--mask', default= False, type=str, 
@@ -62,9 +62,9 @@ best_prec1 = 0
 
 # Stella added
 parser.add_argument('--base_path', default = 'History', type=str, help='base path for Stella (you have to change)')
-parser.add_argument('--wandb_key', default='c07987db95186aade1f1dd62754c86b4b6db5af6', type=str, help='wandb key for Stella (you have to change). You can get it from https://wandb.ai/authorize')
+parser.add_argument('--wandb_key', default='108101f4b9c3e31a235aa58307d1c6b548cfb54a', type=str, help='wandb key for Stella (you have to change). You can get it from https://wandb.ai/authorize')
 parser.add_argument('--wandb_mode', default='online', type=str, choices=['online', 'offline'], help='tracking with wandb or turn it off')
-parser.add_argument('--wandb_user', default='hphp', type=str, help='your wandb username (you have to change)')
+parser.add_argument('--wandb_user', default='stellasybae', type=str, help='your wandb username (you have to change)')
 parser.add_argument('--experiment_name', default='231102_no_mask', type=str, help='your wandb experiment name (you have to change)')
 parser.add_argument('--wandb_project', default='ICASC++', type=str, help='your wandb project name (you have to change)')
 
@@ -101,7 +101,7 @@ def main():
     # define loss function (criterion) and optimizer
     if args.dataset == 'ImageNet':
         criterion = nn.CrossEntropyLoss().cuda()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC':
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset == 'ADNI':
         criterion = torch.nn.BCEWithLogitsLoss().cuda()
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
@@ -183,8 +183,12 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
     top5 = AverageMeter()
 
     train_loader_examples_num = len(train_loader.dataset)
-    probs = np.zeros((train_loader_examples_num, 10), dtype = np.float32)
-    gt = np.zeros((train_loader_examples_num, 10), dtype = np.float32)
+    if args.dataset == 'CheXpert':
+        label_dim=10
+    elif args.dataset=='ADNI': 
+        label_dim=3
+    probs = np.zeros((train_loader_examples_num, label_dim), dtype = np.float32)
+    gt = np.zeros((train_loader_examples_num, label_dim), dtype = np.float32)
     k = 0
 
     # switch to train mode
@@ -244,7 +248,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         "Train Top 1 ACC":top1.avg,
         "Train Top 5 ACC":top5.avg,
     }) 
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC': 
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI': 
         auc = roc_auc_score(gt, probs)
         print("Training AUC: {}". format(auc))
         wandb.log({
@@ -299,8 +303,12 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
     global k
 
     val_loader_examples_num = len(val_loader.dataset)
-    probs = np.zeros((val_loader_examples_num, 10), dtype = np.float32)
-    gt = np.zeros((val_loader_examples_num, 10), dtype = np.float32)
+    if args.dataset == 'CheXpert':
+        label_dim=10
+    elif args.dataset=='ADNI': 
+        label_dim=3
+    probs = np.zeros((val_loader_examples_num, label_dim), dtype = np.float32)
+    gt = np.zeros((val_loader_examples_num, label_dim), dtype = np.float32)
     k = 0
 
     # switch to evaluate mode
@@ -346,7 +354,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         f = open(dir + "/performance.txt", "a")
         f.write(str(top1.avg.item()) + "\n")
         f.close()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC': 
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI': 
         auc = roc_auc_score(gt, probs)
         print("Training AUC: {}". format(auc))
         wandb.log({
@@ -407,7 +415,7 @@ def accuracy(dataset, output, target, topk=(1,)):
             correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
     
-    elif dataset == 'CheXpert' or dataset == 'MIMIC':
+    elif dataset == 'CheXpert' or dataset == 'MIMIC' or dataset == 'ADNI':
         
         # For AUC ROC
         probs[k: k + output.shape[0], :] = output.cpu()
