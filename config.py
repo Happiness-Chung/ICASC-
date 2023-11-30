@@ -1,0 +1,5 @@
+pkl_dir_path             = 'pickles'
+train_val_df_pkl_path    = 'train_val_df.pickle'
+test_df_pkl_path         = 'test_df.pickle'
+disease_classes_pkl_path = 'disease_classes.pickle'
+models_dir               = 'models'

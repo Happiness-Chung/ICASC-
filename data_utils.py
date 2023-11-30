@@ -85,9 +85,10 @@ def get_datasets(name):
         transform = transforms.Compose([
                                     transforms.Resize([150,150]),
                                     transforms.ToTensor(),
-                                    normalize])
-        train = NIHTrainDataset(data_dir='data/NIH', transform= transform, indices=list(range(sampling_num)))
-        test = NIHTestDataset(data_dir='data/NIH', transform= transform)
+                                    # normalize
+                                    ])
+        train = NIHTrainDataset(data_dir='C:/data/NIH', transform= transform, indices=list(range(sampling_num)))
+        test = NIHTestDataset(data_dir='C:/data/NIH', transform= transform)
     
     unorm = UnNormalize(mean, var)
 

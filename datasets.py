@@ -17,6 +17,7 @@ import pandas as pd
 import PIL.Image as pilimg
 import random
 import logging
+import config
 
 import numpy as np
 from numpy.core.fromnumeric import mean
@@ -113,7 +114,8 @@ class NIHTrainDataset(Dataset):
         for i in tqdm(range(self.df.shape[0])):
             filename  = os.path.basename(self.df.iloc[i,0])
             if filename in train_val_list:
-                train_val_df = train_val_df.append(self.df.iloc[i:i+1, :])
+                train_val_df = pd.concat([train_val_df, self.df.iloc[i:i+1, :]])
+                # train_val_df.append(self.df.iloc[i:i+1, :])
         return train_val_df
 
     def __getitem__(self, index):
@@ -146,7 +148,7 @@ class NIHTrainDataset(Dataset):
         return merged_df
     
     def get_train_val_list(self):
-        f = open("data/NIH/train_val_list(original)", 'r')
+        f = open("C:/data/NIH/train_val_list(original).txt", 'r')
         train_val_list = str.split(f.read(), '\n')
         return train_val_list
 
@@ -230,11 +232,12 @@ class NIHTestDataset(Dataset):
         for i in tqdm(range(self.df.shape[0])):
             filename  = os.path.basename(self.df.iloc[i,0])
             if filename in test_list:
-                test_df = test_df.append(self.df.iloc[i:i+1, :])
+                test_df = pd.concat([test_df, self.df.iloc[i:i+1, :]])
+                # test_df.append(self.df.iloc[i:i+1, :])
         return test_df
 
     def get_test_list(self):
-        f = open( os.path.join('data/NIH', 'test_list.txt'), 'r')
+        f = open( os.path.join('C:/data/NIH', 'test_list.txt'), 'r')
         test_list = str.split(f.read(), '\n')
         return test_list
 

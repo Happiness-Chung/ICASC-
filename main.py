@@ -30,7 +30,7 @@ import wandb
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--dataset', default='CheXpert' , help='ImageNet, CheXpert, MIMIC')
-parser.add_argument('--plus', default=True, type=str, 
+parser.add_argument('--plus', default=False, type=str, 
                     help='(1) whether apply icasc++')
 parser.add_argument('--mask', default= False, type=str, 
                     help='(2) whether apply icasc++')
@@ -45,7 +45,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=32, type=int,
                     metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.00001, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
@@ -65,7 +65,7 @@ parser.add_argument('--base_path', default = 'History', type=str, help='base pat
 parser.add_argument('--wandb_key', default='c07987db95186aade1f1dd62754c86b4b6db5af6', type=str, help='wandb key for Stella (you have to change). You can get it from https://wandb.ai/authorize')
 parser.add_argument('--wandb_mode', default='online', type=str, choices=['online', 'offline'], help='tracking with wandb or turn it off')
 parser.add_argument('--wandb_user', default='hphp', type=str, help='your wandb username (you have to change)')
-parser.add_argument('--experiment_name', default='231102_no_mask', type=str, help='your wandb experiment name (you have to change)')
+parser.add_argument('--experiment_name', default='Loss Tracking (CheXpert)', type=str, help='your wandb experiment name (you have to change)')
 parser.add_argument('--wandb_project', default='ICASC++', type=str, help='your wandb project name (you have to change)')
 
 
@@ -101,7 +101,7 @@ def main():
     # define loss function (criterion) and optimizer
     if args.dataset == 'ImageNet':
         criterion = nn.CrossEntropyLoss().cuda()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC':
+    elif args.dataset == 'CheXpert' or args.dataset == 'NIH':
         criterion = torch.nn.BCEWithLogitsLoss().cuda()
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
@@ -182,9 +182,14 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
     top1 = AverageMeter()
     top5 = AverageMeter()
 
+    if args.dataset == "CheXpert":
+        class_num = 10
+    elif args.dataset == "NIH":
+        class_num = 14
+
     train_loader_examples_num = len(train_loader.dataset)
-    probs = np.zeros((train_loader_examples_num, 10), dtype = np.float32)
-    gt = np.zeros((train_loader_examples_num, 10), dtype = np.float32)
+    probs = np.zeros((train_loader_examples_num, class_num), dtype = np.float32)
+    gt = np.zeros((train_loader_examples_num, class_num), dtype = np.float32)
     k = 0
 
     # switch to train mode
@@ -226,6 +231,12 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
+
+        wandb.log({
+        "Attention separation (last layer)": l1,
+        "Attention separation (inner layer)": l2,
+        "Attention consistency": l3
+        })
         
         if i % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
@@ -248,7 +259,6 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         auc = roc_auc_score(gt, probs)
         print("Training AUC: {}". format(auc))
         wandb.log({
-        "Epoch":epoch,
         "Train loss":losses.avg,
         "AUC":auc,
     })   
@@ -299,8 +309,12 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
     global k
 
     val_loader_examples_num = len(val_loader.dataset)
-    probs = np.zeros((val_loader_examples_num, 10), dtype = np.float32)
-    gt = np.zeros((val_loader_examples_num, 10), dtype = np.float32)
+    if args.dataset == "CheXpert":
+        class_num = 10
+    elif args.dataset == "NIH":
+        class_num = 14
+    probs = np.zeros((val_loader_examples_num, class_num), dtype = np.float32)
+    gt = np.zeros((val_loader_examples_num, class_num), dtype = np.float32)
     k = 0
 
     # switch to evaluate mode
@@ -312,11 +326,11 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         
         # compute output
         if args.plus == False:
-            output, l1, l2, l3, hmaps, _  = model(inputs, target)
-            loss = criterion(output, target)+l1 + l2 + l3
+            output, ll1, ll2, ll3, hmaps, _  = model(inputs, target)
+            loss = criterion(output, target)+ll1 + ll2 + ll3
         else:
-            output, l1, l2, l3, hmaps, _, bw = model(inputs, target)
-            loss = criterion(output, target)+l1+l2+l3+bw
+            output, ll1, ll2, ll3, hmaps, _, bw = model(inputs, target)
+            loss = criterion(output, target)+ll1+ll2+ll3+bw
         # measure accuracy and record loss
         prec1, prec5 = accuracy(args.dataset, output.data, target, topk=(1, 5))
         losses.update(loss.item(), inputs.size(0))
@@ -325,7 +339,13 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        
+
+        wandb.log({
+        "(val) Attention separation (last layer)": ll1,
+        "(val) Attention separation (inner layer)": ll2,
+        "(val) Attention consistency": ll3
+        })
+
         if i % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -346,7 +366,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         f = open(dir + "/performance.txt", "a")
         f.write(str(top1.avg.item()) + "\n")
         f.close()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC': 
+    elif args.dataset == 'CheXpert' or args.dataset == 'NIH': 
         auc = roc_auc_score(gt, probs)
         print("Training AUC: {}". format(auc))
         wandb.log({
@@ -407,7 +427,7 @@ def accuracy(dataset, output, target, topk=(1,)):
             correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
     
-    elif dataset == 'CheXpert' or dataset == 'MIMIC':
+    elif dataset == 'CheXpert' or dataset == 'NIH':
         
         # For AUC ROC
         probs[k: k + output.shape[0], :] = output.cpu()
