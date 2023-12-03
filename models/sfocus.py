@@ -8,19 +8,31 @@ import cv2
 from torchvision.utils import save_image
 import os
 
+# import argparse
+# parser = argparse.ArgumentParser(description='ResNet arguments')
+# parser.add_argument('--layer_depth', default=1, type=int, help='depth of last layer')
+# args = parser.parse_args()
+
 class SFOCUS(nn.Module):
-    def __init__(self, model, grad_layers, dataset, num_classes, plus):
+    def __init__(self, model, grad_layers, **kwargs):
         super(SFOCUS, self).__init__()
 
         # grad_layers = ['conv4_x', 'conv5_x']
 
         self.model = model
-        self.dataset = dataset
+        self.dataset = kwargs.get('dataset')
+        if self.dataset == 'CheXpert':
+            self.num_classes = 10
+        elif self.dataset == 'ADNI':
+            self.num_classes = 3
+        self.plus = kwargs.get('plus')
         # print(self.model)
-        self.plus = plus
+        
+        self.layer_depth = kwargs.get('layer_depth')
         self.grad_layers = grad_layers
-
-        self.num_classes = num_classes
+        self.bw_loss = kwargs.get('bw_loss_setting')
+        self.temperature = kwargs.get('temperature')
+        
 
         # Feed-forward features
         self.feed_forward_features = {}
@@ -37,6 +49,7 @@ class SFOCUS(nn.Module):
 
         def backward_hook(name, module, grad_input, grad_output): # modulelist들에 대해서도 backpropagation이 일어나는 것을 확인 !!
             # last_blocks0 ~ last_blocks#
+            print(name)
             self.backward_features[name] = grad_output[0]
 
         gradient_layers_found = 0
@@ -101,7 +114,7 @@ class SFOCUS(nn.Module):
         # grad_result = grad_heatmap + torch_img.cpu() # (1, 3, W, H)
         # grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
 
-        save_image(grad_heatmap,'/scratch/connectome/stellasybae/ICASC-/result/result.png')
+        save_image(grad_heatmap,'/scratch/connectome/stellasybae/ICASC-/Results/result.png')
 
     def forward(self, images, labels):
 
@@ -235,19 +248,20 @@ class SFOCUS(nn.Module):
                 if self.dataset == 'CheXpert':
                     last_size = 19
                 elif self.dataset == 'ADNI':
-                    last_size = 19 ## arbitrary...:( -Stella
-                backward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
+                    last_size = 7 ## arbitrary...:( -Stella
+                backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
                 bw_loss_true = 0
                 bw_loss_false = 0
                 
-                for i in range(len(labels)):
-                    for j in range(self.num_classes):
-                        if labels[i][j] == 1:
-                            bw_loss_true += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
-                bw_loss_true = 1 - sigmoid(bw_loss_true)
+#                 for i in range(len(labels)):
+#                     for j in range(self.num_classes):
+#                         if labels[i][j] == 1:
+#                             bw_loss_true += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
+#                 bw_loss_true = 1 - sigmoid(bw_loss_true)
                 cnt = 0
                 # print("true : ", sigmoid(logits[1]) * labels[1])
+                # print(self.backward_features['last_blocks0'].shape) # 얘가 19가 들어감...!
                 for i in range(len(labels)):
                     for j in range(self.num_classes):
                         if labels[i][j] == 1:
@@ -259,7 +273,9 @@ class SFOCUS(nn.Module):
                 forward_feature /= cnt
 
                 weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                #A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                A_t_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                bw_loss_true = torch.sum(A_t_la / (last_size * last_size))
 
                 # mask = F.interpolate(A_t_la, size=(38, 38), mode='bilinear', align_corners=False)
                 # At_min = mask.min().detach()
@@ -273,13 +289,19 @@ class SFOCUS(nn.Module):
                 L_ac_in = 0
                 L_as_la = 0
                 L_as_in = 0
-                # A_conf_la = 0
-                # A_t_la = 0
+                A_conf_la = 0
+                A_t_la = 0
 
                 if self.dataset == 'CheXpert':
                     num_label=10
+                    class_num = 10
                 elif self.dataset == 'ADNI':
                     num_label=3
+                    class_num =3
+                elif self.dataset =='NIH':
+                    num_label=14
+                    class_num = 14
+
                 labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
                 self.populate_grads(5*sigmoid(logits), labels)
                 for i in range(len(labels)):
@@ -288,9 +310,8 @@ class SFOCUS(nn.Module):
                             bw_loss_false += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
                 bw_loss_false = sigmoid(bw_loss_false)
 
-                backward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((sample_length, 1, last_size, last_size), dtype=torch.float32).cuda()
-
+                backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda() # 왜 다시 초기화를 하는거지..
                 cnt = 0
                 # print("conf: ", labels[1] * sigmoid(logits[1]))
                 for i in range(len(labels)):
@@ -303,9 +324,23 @@ class SFOCUS(nn.Module):
                 backward_feature /= cnt
                 forward_feature /= cnt
                 weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+#                 A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
 
-                bw_loss = (bw_loss_false + bw_loss_true)/ len(labels)
+#                 bw_loss = (bw_loss_false + bw_loss_true)/ len(labels)
+                A_conf_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+
+                bw_loss_false = torch.sum(A_conf_la / (last_size * last_size))
+
+                sigmoid =  nn.Sigmoid()
+                
+                # bw_loss = bw_loss_false / (bw_loss_true + 0.0000001)
+                if self.bw_loss == 'simple':
+                    bw_loss = bw_loss_false / (bw_loss_true+bw_loss_false)
+                elif self.bw_loss == 'exponential':
+                    bw_loss = torch.exp(bw_loss_false) / (torch.exp(bw_loss_true)+torch.exp(bw_loss_false))
+                elif self.bw_loss == 'exponential_and_temperature':
+                    bw_loss = torch.exp(bw_loss_false/self.temperature) / (torch.exp(bw_loss_true/self.temperature)+torch.exp(bw_loss_false/self.temperature))
+            
             elif self.plus == False:
                 # last block
                 sigmoid = nn.Sigmoid()
@@ -356,17 +391,34 @@ class SFOCUS(nn.Module):
             return logits, L_as_la, L_as_in, L_ac_in, A_t_la, A_conf_la, bw_loss
         
       
-def sfocus18(dataset, num_classes, pretrained=False, plus = False):
+# def sfocus18(dataset, num_classes, pretrained=False, plus = False, **kwargs):
+#     if plus == True:
+#         grad_layers = ['conv4_x']
+#         for i in range(num_classes):
+#             grad_layers.append('last_blocks'+ str(i))
+#     else:
+#         grad_layers = ['conv4_x', 'conv5_x']
+#     base = resnet.resnet18(num_classes=num_classes, plus = plus, **kwargs)
+#     model = SFOCUS(base, grad_layers, dataset, num_classes, plus=plus, **kwargs)
+#     return model
+
+def sfocus18(pretrained=False, **kwargs):
+    dataset = kwargs.get('dataset')
+    if dataset == 'CheXpert':
+        num_classes = 10
+    elif dataset == 'ADNI':
+        num_classes = 3       
+    plus = kwargs.get('plus')
     if plus == True:
         grad_layers = ['conv4_x']
         for i in range(num_classes):
             grad_layers.append('last_blocks'+ str(i))
     else:
         grad_layers = ['conv4_x', 'conv5_x']
-    base = resnet.resnet18(num_classes=num_classes, plus = plus)
-    model = SFOCUS(base, grad_layers, dataset, num_classes, plus=plus)
+    # print('kwargs in sfocus18', kwargs) # 여기서는 num class 잘 들어감
+    base = resnet.resnet18(**kwargs) # 여기서 에러가 남..
+    model = SFOCUS(base, grad_layers, **kwargs)
     return model
-
 
 if __name__ == '__main__':
     model = sfocus18(10).cuda()

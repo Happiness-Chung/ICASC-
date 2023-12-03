@@ -245,8 +245,8 @@ class ChexpertTrainDataset(Dataset):
 
     def __init__(self,transform = None, indices = None):
         
-        csv_path = "C:/data/CheXpert-v1.0-small/selected_train.csv" ####
-        self.dir = "C:/data/" ####
+        csv_path = "./data/CheXpert-v1.0-small/selected_train.csv" ####
+        self.dir = "./data/" ####
         self.transform = transform
 
         self.all_data = pd.read_csv(csv_path)
@@ -308,8 +308,8 @@ class ChexpertTestDataset(Dataset):
 
     def __init__(self, transform = None):
         
-        csv_path = "C:/data/CheXpert-v1.0-small/selected_test.csv" ####
-        self.dir = "C:/data/" ####
+        csv_path = "./data/CheXpert-v1.0-small/selected_test.csv" ####
+        self.dir = "./data/" ####
         self.transform = transform
 
         self.all_data = pd.read_csv(csv_path)

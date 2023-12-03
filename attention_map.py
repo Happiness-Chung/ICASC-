@@ -24,7 +24,7 @@ import cv2
 import math
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('--dataset', default='CheXpert' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
+parser.add_argument('--dataset', default='NIH' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
 parser.add_argument('--plus', default= True, type=str, 
                     help='whether apply icasc++')
 parser.add_argument('--ngpu', default=1, type=int, metavar='G',
@@ -67,7 +67,7 @@ def main():
     
     train_dataset, val_dataset, num_classes, unorm = get_datasets(args.dataset)
     # create model
-    model = sfocus18(args.dataset, num_classes, pretrained=False, plus=args.plus)
+    model = sfocus18(args.dataset, num_classes, pretrained=False, plus=args.plus, test = True)
 
     model = torch.nn.DataParallel(model, device_ids=list(range(args.ngpu)))
     #model = torch.nn.DataParallel(model).cuda()
@@ -78,7 +78,7 @@ def main():
         sum([p.data.nelement() for p in model.parameters()])))
 
     # optionally resume from a checkpoint
-    model.load_state_dict(torch.load('History/2023-11-14_13H/model.pth'))
+    model.load_state_dict(torch.load('History/2023-11-25_18H/model.pth'))
 
     cudnn.benchmark = True
 
@@ -113,43 +113,44 @@ def save_cam(torch_img, grad_cam_map, index, conf = False):
 
     grad_result = grad_heatmap + torch_img.cpu() # (1, 3, W, H)
     grad_result = grad_result.div(grad_result.max()).squeeze() # (3, W, H)
-
+    print(result_dir)
+    os.makedirs(result_dir+'/attention_map', exist_ok=True)
     if conf == False:
-        save_image(grad_result,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus(parallel)/result{}_true.png'.format(index+150))
+        save_image(grad_result, result_dir+'attention_map/result{}_true.png'.format(index))
     else:
-        save_image(grad_result,'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/plus(parallel)/result{}_false.png'.format(index+150))
+        save_image(grad_result,result_dir+'attention_map/result{}_false.png'.format(index))
 
 def validate(val_loader, model):
-      batch_time = AverageMeter()
+    batch_time = AverageMeter()
 
-      # switch to evaluate mode
-      model.eval()
-      end = time.time()
-      h_score = 0
-      for i, (inputs, target) in enumerate(val_loader):
-        
-        if i == 50:
-            print("H score: ", h_score / 50)
-            break
+    # switch to evaluate mode
+    model.eval() 
+    end = time.time()
+    h_score = 0
+    for i, (inputs, target) in enumerate(val_loader):
         
         target = target.cuda()
         inputs = inputs.cuda()
         
         # compute output
         if args.plus == False:
-            output, l1, l2, l3, hmaps, hmaps_conf  = model(inputs, target)
+            hmaps, hmaps_conf  = model(inputs, target)
         else:
-            output, l1, l2, l3, hmaps, hmaps_conf, bw = model(inputs, target)
+            hmaps, hmaps_conf = model(inputs, target)
         
         #save_image(inputs[0], 'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/imgs/{}.jpg'.format(i+50))
-        save_cam(inputs[0], hmaps, i)
-        save_cam(inputs[0], hmaps_conf, i, conf=True)
-        # h_score += get_hscore(hmaps, hmaps_conf)
+        for j in range(len(hmaps)):
+            # if i*len(inputs) + j < 5000:
+            save_cam(inputs[j], hmaps[j], i*len(inputs) + j)
+            save_cam(inputs[j], hmaps_conf[j], i*len(inputs) + j, conf=True)
+            h_score += get_hscore(hmaps[j], hmaps_conf[j])
 
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+    print("H-score: ", h_score/len(val_loader))
+    # measure elapsed time
+    batch_time.update(time.time() - end)
+    end = time.time()
+    
     
 
 class AverageMeter(object):

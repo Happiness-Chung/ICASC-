@@ -12,6 +12,11 @@ import torch
 import torch.nn as nn
 import collections
 
+# import argparse
+# parser = argparse.ArgumentParser(description='ResNet arguments')
+# parser.add_argument('--layer_depth', default=1, type=int, help='depth of last layer')
+# args = parser.parse_args()
+
 class BasicBlock(nn.Module):
     """Basic Block for resnet 18 and resnet 34
 
@@ -25,7 +30,7 @@ class BasicBlock(nn.Module):
 
     def __init__(self, name, in_channels, out_channels, stride=1):
         super().__init__()
-
+        #self.register_args(**args)
         #residual function
         self.residual_function = nn.Sequential(
             collections.OrderedDict([
@@ -52,6 +57,12 @@ class BasicBlock(nn.Module):
     def forward(self, x):
         return nn.ReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
 
+#     def register_args(self,**args):
+#         for name,value in kwargs.items():
+#             setattr(self,name,value)
+#         self.args = args
+        
+    
 class BottleNeck(nn.Module):
     """Residual block for resnet over 50 layers
 
@@ -83,13 +94,17 @@ class BottleNeck(nn.Module):
     
 class ResNet(nn.Module):
 
-    def __init__(self, block, num_block, num_classes=10, plus = False):
+    def __init__(self, block, num_block, **kwargs):
         super().__init__()
-
         self.in_channels = 64
-        self.num_classes = num_classes
+        if kwargs.get('dataset') == 'CheXpert':
+            self.num_classes = 10
+        elif kwargs.get('dataset') == 'ADNI':
+            self.num_classes = 3
+        self.plus = kwargs.get('plus')
         self.last_blocks = []
-        self.plus = plus
+        
+        self.layer_depth = kwargs.get('layer_depth')
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
@@ -101,14 +116,14 @@ class ResNet(nn.Module):
         self.conv3_x = self._make_layer(block, 128, num_block[1], 2, "conv3_x")
         self.conv4_x = self._make_layer(block, 256, num_block[2], 2, "conv4_x")
         self.conv5_x = self._make_layer(block, 512, num_block[3], 2, "conv5_x")
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.fc = nn.Linear(512 * block.expansion, self.num_classes)
 
         # class number of last blocks.
-        if plus == True:
-            for i in range(num_classes):
-                self.last_blocks.append(self._make_layer(block, 1, num_block[3], 2, "conv5_" + str(i) + "_x", last=True).cuda())
+        if self.plus == True:
+            for i in range(self.num_classes):
+                self.last_blocks.append(self._make_layer(block, self.layer_depth, num_block[3], 2, "conv5_" + str(i) + "_x", last=True).cuda())
             self.last_blocks = nn.ModuleList(self.last_blocks)
-            self.fc = nn.Linear( num_classes * 1 * block.expansion, num_classes)
+            self.fc = nn.Linear(self.num_classes * self.layer_depth * block.expansion, self.num_classes)
 
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         
@@ -180,10 +195,10 @@ class ResNet(nn.Module):
         output = self.fc(output)
         return output 
 
-def resnet18(num_classes, plus):
+def resnet18(**kwargs):
     """ return a ResNet 18 object
     """
-    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes, plus)
+    return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 def resnet34():
     """ return a ResNet 34 object

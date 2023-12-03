@@ -68,6 +68,9 @@ parser.add_argument('--wandb_user', default='stellasybae', type=str, help='your 
 parser.add_argument('--experiment_name', default='231102_no_mask', type=str, help='your wandb experiment name (you have to change)')
 parser.add_argument('--wandb_project', default='ICASC++', type=str, help='your wandb project name (you have to change)')
 
+parser.add_argument('--layer_depth', default=1, type=int, help='depth of last layer')
+parser.add_argument('--bw_loss_setting', default='simple', type=str, choices=['simple', 'exponential', 'exponential_and_temperature'])
+parser.add_argument('--temperature', default=5, type=int)
 
 global result_dir
 global probs 
@@ -85,7 +88,7 @@ def main():
     wandb.init(project=args.wandb_project, entity=args.wandb_user, reinit=True, name=args.experiment_name)
 
     now = datetime.now()
-    result_dir = os.path.join(base_path, "{}_{}H".format(now.date(), str(now.hour)))
+    result_dir = os.path.join(base_path, 'results', args.experiment_name) #"{}_{}H".format(now.date(), str(now.hour)))
     os.makedirs(result_dir, exist_ok=True)
     c = open(result_dir + "/config.txt", "w")
     c.write("plus: {}, dataset: {}, epochs: {}, lr: {}, momentum: {},  weight-decay: {}, seed: {}".format(args.plus, args.dataset, str(args.epochs), str(args.lr), str(args.momentum),str(args.weight_decay), str(args.seed)))
@@ -96,8 +99,11 @@ def main():
     random.seed(args.seed)
     
     train_dataset, val_dataset, num_classes, unorm = get_datasets(args.dataset)
+    
     # create model
-    model = sfocus18(args.dataset, num_classes, pretrained=False, plus=args.plus)
+    kwargs = vars(args) # Namespace to Dict
+    #model = sfocus18(args.dataset, num_classes, pretrained=False, plus=args.plus, **kwargs)
+    model = sfocus18(pretrained=False, **kwargs)
     # define loss function (criterion) and optimizer
     if args.dataset == 'ImageNet':
         criterion = nn.CrossEntropyLoss().cuda()
@@ -113,7 +119,7 @@ def main():
     model = model.cuda()
 
     if args.mask == True:
-        mask_model = sfocus18(num_classes, pretrained=False, plus=args.plus)
+        mask_model = sfocus18(pretrained=False, **kwargs)
         mask_model = torch.nn.DataParallel(mask_model, device_ids=list(range(args.ngpu)))
         mask_model = mask_model.cuda()
         # optionally resume from a checkpoint
@@ -181,6 +187,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    black_and_white_losses = AverageMeter()
 
     train_loader_examples_num = len(train_loader.dataset)
     if args.dataset == 'CheXpert':
@@ -221,6 +228,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1[0], inputs.size(0))
         top5.update(prec5[0], inputs.size(0))
+        black_and_white_losses.update(bw.item(), inputs.size(0))
 
         
         # compute gradient and do SGD step
@@ -254,7 +262,8 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         wandb.log({
         "Epoch":epoch,
         "Train loss":losses.avg,
-        "AUC":auc,
+        "train AUC":auc,
+        "train BW loss": black_and_white_losses.avg
     })   
     
 def mask_img(imgs, grad_cam_map):
@@ -297,6 +306,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    black_and_white_losses = AverageMeter()
 
     global probs 
     global gt
@@ -330,6 +340,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1[0], inputs.size(0))
         top5.update(prec5[0], inputs.size(0))
+        black_and_white_losses.update(bw.item(), inputs.size(0))
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -356,11 +367,12 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         f.close()
     elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI': 
         auc = roc_auc_score(gt, probs)
-        print("Training AUC: {}". format(auc))
+        print("ValidAUC: {}". format(auc))
         wandb.log({
         "Epoch":epoch,
-        "Train loss":losses.avg,
-        "AUC":auc,
+        "Valid loss":losses.avg,
+        "valid AUC":auc,
+        "valid BW loss": black_and_white_losses.avg
         })
         f = open(dir + "/performance.txt", "a")
         f.write(str(auc) + "\n")
