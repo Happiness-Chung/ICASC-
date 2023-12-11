@@ -129,7 +129,7 @@ def create_binary_mask(heatmap, threshold=0.5):
 def calculate_iou(binary_mask, x, y, h, w):
     # BBOX를 이진 마스크로 변환
     bbox_mask = np.zeros_like(binary_mask)
-    bbox_mask[y-h//2:y+h//2, x-w//2:x+w//2] = 1
+    bbox_mask[y:y+h, x:x+w] = 1
     # 교차 영역과 합집합 영역 계산
     intersection = np.logical_and(binary_mask, bbox_mask).sum()
     union = np.logical_or(binary_mask, bbox_mask).sum()
