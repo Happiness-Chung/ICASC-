@@ -24,6 +24,9 @@ import cv2
 import math
 
 import pandas as pd
+import warnings
+
+warnings.filterwarnings(action='ignore')
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--dataset', default='CheXpert' , help='Dataor Integral Object Attention githubor Integral Object Attention githubset to train')
@@ -63,6 +66,9 @@ parser.add_argument('--wandb_user', default='stellasybae', type=str, help='your 
 parser.add_argument('--experiment_name', default='231102_no_mask', type=str, help='your wandb experiment name (you have to change)')
 parser.add_argument('--wandb_project', default='ICASC++', type=str, help='your wandb project name (you have to change)')
 
+parser.add_argument('--model_weight', default='NIH_1_parallel', type=str)
+                    
+                    
 parser.add_argument('--layer_depth', default=1, type=int, help='depth of last layer')
 parser.add_argument('--bw_loss_setting', default='simple', type=str, choices=['simple', 'exponential', 'exponential_and_temperature'])
 parser.add_argument('--temperature', default=5, type=int)
@@ -96,8 +102,8 @@ def main():
         sum([p.data.nelement() for p in model.parameters()])))
 
     # optionally resume from a checkpoint
-    model.load_state_dict(torch.load('./results/{0}/model.pth'.format(args.experiment_name)))
-
+    # model.load_state_dict(torch.load('./results/{0}/model.pth'.format(args.experiment_name)))
+    model.load_state_dict(torch.load('./weights/{0}.pth'.format(args.model_weight)))
     cudnn.benchmark = True
 
     # Data loading code
@@ -123,7 +129,7 @@ def create_binary_mask(heatmap, threshold=0.5):
 def calculate_iou(binary_mask, x, y, h, w):
     # BBOX를 이진 마스크로 변환
     bbox_mask = np.zeros_like(binary_mask)
-    bbox_mask[y-h/2:y+h/2, x-w/2:x+w/2] = 1
+    bbox_mask[y-h//2:y+h//2, x-w//2:x+w//2] = 1
     # 교차 영역과 합집합 영역 계산
     intersection = np.logical_and(binary_mask, bbox_mask).sum()
     union = np.logical_or(binary_mask, bbox_mask).sum()
@@ -134,9 +140,12 @@ def calculate_iou(binary_mask, x, y, h, w):
 
 def save_cam(name, torch_img, grad_cam_map, index, args, conf = False):
     args = parser.parse_args()
+    result_dir = os.path.join('./results', args.experiment_name)
+    os.makedirs(result_dir, exist_ok=True)
+    
     if args.dataset == 'NIH':
         bbox_df = pd.read_csv('./data/NIH/BBox_List_2017.csv')
-        file_name = args.experiment_name+'_IOU.txt'
+        file_name = './results/'+args.experiment_name+'/'+args.experiment_name+'_IOU.txt'
         content = ''
         with open(file_name, 'w') as file:
             file.write(content)
@@ -158,7 +167,7 @@ def save_cam(name, torch_img, grad_cam_map, index, args, conf = False):
     
     #### grad result & BBOX IOU computation ####
     if args.dataset == 'NIH':
-        if name in bbox_df['Image Index']:
+        if name in list(bbox_df['Image Index']):
             x = bbox_df[bbox_df['Image Index'] == name]['Bbox [x'].values[0]
             y = bbox_df[bbox_df['Image Index'] == name]['y'].values[0]
             w = bbox_df[bbox_df['Image Index'] == name]['w'].values[0]
@@ -168,11 +177,9 @@ def save_cam(name, torch_img, grad_cam_map, index, args, conf = False):
             iou = calculate_iou(binary_mask, x, y, h, w)
             result = '{0} : {1} \n'.format(name.split('.')[0], iou)
 
-        with open(file_name, 'a') as file:
-            file.write(result)
-
-        
-    result_dir = os.path.join('./results', args.experiment_name)
+            with open(file_name, 'a') as file:
+                file.write(result)
+    
     os.makedirs(result_dir+'/attention_map', exist_ok=True)
     if conf == False:
         save_image(grad_result, result_dir+'/attention_map/name_{}_result{}_true.png'.format(name.split('.')[0], index))
@@ -201,8 +208,8 @@ def validate(val_loader, model):
         #save_image(inputs[0], 'C:/Users/rhtn9/OneDrive/바탕 화면/code/ICASC++/result/imgs/{}.jpg'.format(i+50))
         for j in range(len(hmaps)):
             # if i*len(inputs) + j < 5000:
-            save_cam(name, inputs[j], hmaps[j], i*len(inputs) + j, args)
-            save_cam(name, inputs[j], hmaps_conf[j], i*len(inputs) + j, args, conf=True)
+            save_cam(name[j], inputs[j], hmaps[j], i*len(inputs) + j, args)
+            save_cam(name[j], inputs[j], hmaps_conf[j], i*len(inputs) + j, args, conf=True)
             h_score += get_hscore(hmaps[j], hmaps_conf[j])
 
 

@@ -270,9 +270,10 @@ class SFOCUS(nn.Module):
         
         elif self.dataset == 'CheXpert' or self.dataset == 'MIMIC' or self.dataset=='ADNI' or self.dataset=='NIH':
             if self.test == True:
+                print('you are in the test')
                 if self.plus == True:
                     sigmoid = nn.Sigmoid()
-                    self.populate_grads(5*sigmoid(logits), labels)
+                    self.populate_grads(logits, labels)
                     sample_length = len(self.backward_features['last_blocks0'])
                     last_size = 19
                     
@@ -301,7 +302,7 @@ class SFOCUS(nn.Module):
                         true_attention_maps.append(A_t_la)
 
                     labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
-                    self.populate_grads(5*sigmoid(logits), labels)
+                    self.populate_grads(logits, labels)
                     
                     # 이 부분이 나랑 행복쌤이랑 다름.. (행복쌤은 sample_length가 아니라 걍 1임.. 왜 하드코딩 하신 걸까?)
                     backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
@@ -327,6 +328,7 @@ class SFOCUS(nn.Module):
                     return true_attention_maps, false_attention_maps
             
             else: # not test
+                print('you are not in the test')
                 if self.plus == True:
                     sigmoid = nn.Sigmoid()
                     
