@@ -21,10 +21,13 @@ class SFOCUS(nn.Module):
 
         self.model = model
         self.dataset = kwargs.get('dataset')
+        self.test = kwargs.get('test')
         if self.dataset == 'CheXpert':
             self.num_classes = 10
         elif self.dataset == 'ADNI':
             self.num_classes = 3
+        elif self.dataset == 'NIH':
+            self.num_classes = 14
         self.plus = kwargs.get('plus')
         # print(self.model)
         
@@ -78,6 +81,30 @@ class SFOCUS(nn.Module):
         grad_logits = (logits * labels_ohe).sum()  # BS x num_classes
         grad_logits.backward(gradient=grad_logits, retain_graph=True)
         self.model.zero_grad()
+    def get_cam(self, grad_cam_map):
+        grad_cam_map = grad_cam_map.unsqueeze(dim=0)
+        grad_cam_map = F.interpolate(grad_cam_map, size=(150, 150), mode='bilinear', align_corners=False) # (1, 1, W, H)
+        map_min, map_max = grad_cam_map.min(), grad_cam_map.max()
+        grad_cam_map = (grad_cam_map - map_min).div(map_max - map_min + 0.0000001).data # (1, 1, W, H), min-max scaling
+        
+        #grad_cam_map = grad_cam_map.squeeze() # : (224, 224)
+        grad_heatmap = cv2.applyColorMap(np.uint8(255 * grad_cam_map.squeeze().cpu()), cv2.COLORMAP_JET) # (W, H, 3), numpy 
+        grad_heatmap = torch.from_numpy(grad_heatmap).permute(2, 0, 1).float().div(255) # (3, W, H)
+        b, g, r = grad_heatmap.split(1)
+        grad_heatmap = torch.cat([r, g, b]) # (3, 244, 244), opencv's default format is BGR, so we need to change it as RGB format.
+
+        return grad_heatmap
+    
+    def get_hscore(self, true, false):
+        #print(true.min(), true.max())
+        true = (true - true.min()) / (true.max() - true.min() + 0.0000001)
+        false = (false - false.min()) / (false.max() - false.min() + 0.0000001)
+        #print((torch.abs(2 * true - false) - false))
+        h_score = ((torch.abs(2 * true - false) - false) / (2*150*150) * 100).sum()
+        # .item()
+        # if math.isnan(h_score):
+        #     h_score = 0
+        return h_score
     
     def loss_attention_separation(self, At, Aconf):
         At_min = At.min().detach()
@@ -117,7 +144,15 @@ class SFOCUS(nn.Module):
         save_image(grad_heatmap,'/scratch/connectome/stellasybae/ICASC-/Results/result.png')
 
     def forward(self, images, labels):
-
+        if self.dataset == 'CheXpert':
+            num_label=10
+            class_num = 10
+        elif self.dataset == 'ADNI':
+            num_label=3
+            class_num =3
+        elif self.dataset =='NIH':
+            num_label=14
+            class_num = 14
         #For testing call the function in eval mode and remove with torch.no_grad() if any
 
         logits = self.model(images, parallel_last = self.plus)  # BS x num_classes
@@ -233,162 +268,271 @@ class SFOCUS(nn.Module):
             #Loss Attention Consistency
             L_ac_in = self.loss_attention_consistency(A_t_in, mask_in)
         
-        elif self.dataset == 'CheXpert' or self.dataset == 'MIMIC' or self.dataset=='ADNI':
-            if self.plus == True:
-                sigmoid = nn.Sigmoid()
-                self.populate_grads(5*sigmoid(logits), labels)
-                # inner block
-                # backward_feature = self.backward_features[self.grad_layers[0]]
-                # forward_feature  = self.feed_forward_features[self.grad_layers[0]]
-                # weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                # A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 512 x 38 x 38
-                
-                # last block
-                sample_length = len(self.backward_features['last_blocks0'])
-                if self.dataset == 'CheXpert':
+        elif self.dataset == 'CheXpert' or self.dataset == 'MIMIC' or self.dataset=='ADNI' or self.dataset=='NIH':
+            if self.test == True:
+                if self.plus == True:
+                    sigmoid = nn.Sigmoid()
+                    self.populate_grads(5*sigmoid(logits), labels)
+                    sample_length = len(self.backward_features['last_blocks0'])
                     last_size = 19
-                elif self.dataset == 'ADNI':
-                    last_size = 7 ## arbitrary...:( -Stella
-                backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
-                bw_loss_true = 0
-                bw_loss_false = 0
-                
-#                 for i in range(len(labels)):
-#                     for j in range(self.num_classes):
-#                         if labels[i][j] == 1:
-#                             bw_loss_true += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
-#                 bw_loss_true = 1 - sigmoid(bw_loss_true)
-                cnt = 0
-                # print("true : ", sigmoid(logits[1]) * labels[1])
-                # print(self.backward_features['last_blocks0'].shape) # 얘가 19가 들어감...!
-                for i in range(len(labels)):
-                    for j in range(self.num_classes):
-                        if labels[i][j] == 1:
-                            cnt += 1
-                            backward_feature += self.backward_features['last_blocks' + str(j)]
-                            forward_feature += self.feed_forward_features['last_blocks' + str(j)]
+                    
+                    # 이 부분이 나랑 행복쌤이랑 다름.. (행복쌤은 sample_length가 아니라 걍 1임.. 왜 하드코딩 하신 걸까?)
+                    backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    
+                    true_attention_maps = []
+                    
+                    cnt = 0
+                    for i in range(len(labels)):
+                        #cnt = 0  # 이 부분이 나랑 행복쌤이랑 달랐음..
+                        for j in range(self.num_classes):
+                            if labels[i][j] == 1:
+                                cnt += 1
+                                backward_feature += self.backward_features['last_blocks' + str(j)]
+                                forward_feature += self.feed_forward_features['last_blocks' + str(j)]
 
-                backward_feature /= cnt
-                forward_feature /= cnt
+                        backward_feature /= cnt
+                        forward_feature /= cnt
 
-                weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                #A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
-                A_t_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
-                bw_loss_true = torch.sum(A_t_la / (last_size * last_size))
+                        #weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                        weights = F.adaptive_avg_pool2d(sigmoid(backward_feature), 1)
+                        #A_t_la = sigmoid(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8 x 8
+                        A_t_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True))
+                        true_attention_maps.append(A_t_la)
 
-                # mask = F.interpolate(A_t_la, size=(38, 38), mode='bilinear', align_corners=False)
-                # At_min = mask.min().detach()
-                # At_max = mask.max().detach()
-                # scaled_At = (mask - At_min)/(At_max - At_min)
-                # sigma = 0.25 * At_max
-                # omega = 100.
-                # mask = F.sigmoid(omega*(scaled_At-sigma))
+                    labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
+                    self.populate_grads(5*sigmoid(logits), labels)
+                    
+                    # 이 부분이 나랑 행복쌤이랑 다름.. (행복쌤은 sample_length가 아니라 걍 1임.. 왜 하드코딩 하신 걸까?)
+                    backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
 
-                # L_ac_in = self.loss_attention_consistency(A_t_in, mask)
-                L_ac_in = 0
-                L_as_la = 0
-                L_as_in = 0
-                A_conf_la = 0
-                A_t_la = 0
+                    false_attention_maps = []
+                    cnt=0
+                    for i in range(len(labels)):
+                        #cnt = 0
+                        for j in range(self.num_classes):
+                            if labels[i][j] == 1:
+                                cnt += 1
+                                backward_feature += self.backward_features['last_blocks' + str(j)]
+                                forward_feature += self.feed_forward_features['last_blocks' + str(j)]
 
-                if self.dataset == 'CheXpert':
-                    num_label=10
-                    class_num = 10
-                elif self.dataset == 'ADNI':
-                    num_label=3
-                    class_num =3
-                elif self.dataset =='NIH':
-                    num_label=14
-                    class_num = 14
+                        backward_feature /= cnt
+                        forward_feature /= cnt
+                        weights = F.adaptive_avg_pool2d(F.sigmoid(backward_feature), 1)
+                        #A_conf_la = sigmoid(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                        A_conf_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True))
+                        false_attention_maps.append(A_conf_la)
 
-                labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
-                self.populate_grads(5*sigmoid(logits), labels)
-                for i in range(len(labels)):
-                    for j in range(self.num_classes):
-                        if labels[i][j] == 1:
-                            bw_loss_false += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
-                bw_loss_false = sigmoid(bw_loss_false)
-
-                backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
-                forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda() # 왜 다시 초기화를 하는거지..
-                cnt = 0
-                # print("conf: ", labels[1] * sigmoid(logits[1]))
-                for i in range(len(labels)):
-                    for j in range(self.num_classes):
-                        if labels[i][j] == 1:
-                            cnt += 1
-                            backward_feature += self.backward_features['last_blocks' + str(j)]
-                            forward_feature += self.feed_forward_features['last_blocks' + str(j)]
-
-                backward_feature /= cnt
-                forward_feature /= cnt
-                weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-#                 A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
-
-#                 bw_loss = (bw_loss_false + bw_loss_true)/ len(labels)
-                A_conf_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
-
-                bw_loss_false = torch.sum(A_conf_la / (last_size * last_size))
-
-                sigmoid =  nn.Sigmoid()
-                
-                # bw_loss = bw_loss_false / (bw_loss_true + 0.0000001)
-                if self.bw_loss == 'simple':
-                    bw_loss = bw_loss_false / (bw_loss_true+bw_loss_false)
-                elif self.bw_loss == 'exponential':
-                    bw_loss = torch.exp(bw_loss_false) / (torch.exp(bw_loss_true)+torch.exp(bw_loss_false))
-                elif self.bw_loss == 'exponential_and_temperature':
-                    bw_loss = torch.exp(bw_loss_false/self.temperature) / (torch.exp(bw_loss_true/self.temperature)+torch.exp(bw_loss_false/self.temperature))
+                    return true_attention_maps, false_attention_maps
             
-            elif self.plus == False:
-                # last block
-                sigmoid = nn.Sigmoid()
-                self.populate_grads(sigmoid(logits), labels)
-                for idx, name in enumerate(self.grad_layers):
-                    if idx == 0:
-                        backward_feature = self.backward_features[name]
-                        forward_feature  = self.feed_forward_features[name] # backward_feature = dY_c / dF_{ij}^k
-                        weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1) # BS x 256 x 1 x 1
-                        # sum dimension = 1 -> 1st dimension reduction -> image 1장당 attention map 1장이 나오도록 함. 
-                        A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8 x 8 
-                        #self.save_cam(A_conf_in[0])
-                        
-                    else:
-                        #print(name)
-                        backward_feature = self.backward_features[name]
-                        forward_feature = self.feed_forward_features[name]
-                        weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                        A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 4 x 4
-                
-                labels = torch.ones((len(labels), 10), dtype=torch.float32).cuda() - labels
-                self.populate_grads(logits, labels)
-                for idx, name in enumerate(self.grad_layers):
-                    if idx == 0:
-                        backward_feature = self.backward_features[name]
-                        forward_feature  = self.feed_forward_features[name] # backward_feature = dY_c / dF_{ij}^k
-                        weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1) # BS x 256 x 1 x 1
-                        # sum dimension = 1 -> 1st dimension reduction -> image 1장당 attention map 1장이 나오도록 함. 
-                        A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8 x 8 
-                        #self.save_cam(A_conf_in[0])
-                        
-                    else:
-                        #print(name)
-                        backward_feature = self.backward_features[name]
-                        forward_feature = self.feed_forward_features[name]
-                        weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
-                        A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 4 x 4
-                
-                L_as_la, mask_in = self.loss_attention_separation(A_t_la, A_conf_la)
+            else: # not test
+                if self.plus == True:
+                    sigmoid = nn.Sigmoid()
+                    
+                    self.populate_grads(5*sigmoid(logits), labels)
+                    
+                    # inner block
+                    # backward_feature = self.backward_features[self.grad_layers[0]]
+                    # forward_feature  = self.feed_forward_features[self.grad_layers[0]]
+                    # weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                    # A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 512 x 38 x 38
 
-                L_ac_in = 0
-                L_as_in = 0              
+                    # last block
+                    sample_length = len(self.backward_features['last_blocks0'])
+                    if self.dataset == 'CheXpert' or self.dataset=='NIH':
+                        last_size = 19
+                    elif self.dataset == 'ADNI':
+                        last_size = 7 ## arbitrary...:( -Stella
+                    
+                    bw_loss_true = []
+                    bw_loss_false = []
+                    A_t_la = []
+                    A_conf_la = []
+                    
+                    backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    
+                    # 이건 또 왜 다르지ㅜㅜ (행복쌤은 sample_length가 아니라 1로 하심)
+                    
+                    bw_loss_true = 0
+                    bw_loss_false = 0
 
-        # predictions, Loss AS_last_layer, Loss AS_in_layer, Loss AC_in_layer, heatmap as per paper
-        if self.plus == False:
-            return logits, L_as_la, L_as_in, L_ac_in, A_t_la, A_conf_la
-        else:
-            return logits, L_as_la, L_as_in, L_ac_in, A_t_la, A_conf_la, bw_loss
+                    cnt = 0
+                    for i in range(len(labels)):
+                        for j in range(self.num_classes):
+                            if labels[i][j] == 1:
+                                cnt += 1
+                                backward_feature += self.backward_features['last_blocks' + str(j)]
+                                forward_feature += self.feed_forward_features['last_blocks' + str(j)]
+
+                    backward_feature /= cnt
+                    forward_feature /= cnt
+
+                    weights = F.adaptive_avg_pool2d(F.sigmoid(backward_feature), 1)
+                    #A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                    A_t_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                    bw_loss_true = torch.sum(A_t_la / (last_size * last_size))
+                        
+                        
+                    #A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                    # A_t_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+                    # bw_loss_true = torch.sum(A_t_la / (last_size * last_size))
+
+                    # mask = F.interpolate(A_t_la, size=(38, 38), mode='bilinear', align_corners=False)
+                    # At_min = mask.min().detach()
+                    # At_max = mask.max().detach()
+                    # scaled_At = (mask - At_min)/(At_max - At_min)
+                    # sigma = 0.25 * At_max
+                    # omega = 100.
+                    # mask = F.sigmoid(omega*(scaled_At-sigma))
+
+                    # L_ac_in = self.loss_attention_consistency(A_t_in, mask)
+                    L_ac_in = 0
+                    L_as_la = 0
+                    L_as_in = 0
+                    A_conf_la = 0
+                    A_t_la = 0
+
+                    labels = torch.ones((len(labels), num_label), dtype=torch.float32).cuda() - labels
+                    self.populate_grads(5*sigmoid(logits), labels)
+                    
+                    for i in range(len(labels)):
+                        for j in range(self.num_classes):
+                            if labels[i][j] == 1:
+                                bw_loss_false += torch.mean(self.feed_forward_features['last_blocks' + str(j)][i])
+                    bw_loss_false = sigmoid(bw_loss_false)
+#                     for i in range(len(labels)):
+#                         cnt = 0
+#                         for j in range(self.num_classes):
+#                             if labels[i][j] == 1:
+#                                 cnt += 1
+#                                 forward_feature += self.feed_forward_features['last_blocks' + str(j)][i]
+#                                 backward_feature += self.backward_features['last_blocks' + str(j)][i]
+                    
+#                         if cnt != 0:
+#                             forward_feature /= cnt
+#                             backward_feature /= cnt
+
+#                         weights = F.adaptive_avg_pool2d(sigmoid(backward_feature), 1)
+#                         A_conf_la.append(sigmoid(torch.mul(forward_feature, weights)))
+                        
+                        
+                    backward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda()
+                    forward_feature = torch.zeros((sample_length, self.layer_depth, last_size, last_size), dtype=torch.float32).cuda() # 왜 다시 초기화를 하는거지..
+                    cnt = 0
+                    # print("conf: ", labels[1] * sigmoid(logits[1]))
+                    for i in range(len(labels)):
+                        for j in range(self.num_classes):
+                            if labels[i][j] == 1:
+                                cnt += 1
+                                backward_feature += self.backward_features['last_blocks' + str(j)]
+                                forward_feature += self.feed_forward_features['last_blocks' + str(j)]
+
+                    backward_feature /= cnt
+                    forward_feature /= cnt
+                    weights = F.adaptive_avg_pool2d(F.sigmoid(backward_feature), 1)
+        #                 A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+
+        #                 bw_loss = (bw_loss_false + bw_loss_true)/ len(labels)
+                    A_conf_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+
+                    bw_loss_false = torch.sum(A_conf_la / (last_size * last_size))
+                    
+                    # h_score = 0
+                    
+#                     for i in range(len(labels)*self.num_classes):
+#                         # att_t = self.get_cam(A_t_la[i])
+#                         # att_f = self.get_cam(A_conf_la[i])
+
+#                         h_score += self.get_hscore(A_t_la[i], A_conf_la[i]).item()
+                    
+#                     bw_loss_false = torch.sum(A_conf_la / (last_size * last_size))
+                    
+#                     h_score /= len(A_t_la)
+                    #bw_loss /= len(A_t_la)
+                    
+                    
+                    
+#                     cnt = 0
+#                     # print("conf: ", labels[1] * sigmoid(logits[1]))
+#                     for i in range(len(labels)):
+#                         for j in range(self.num_classes):
+#                             if labels[i][j] == 1:
+#                                 cnt += 1
+#                                 backward_feature += self.backward_features['last_blocks' + str(j)]
+#                                 forward_feature += self.feed_forward_features['last_blocks' + str(j)]
+
+#                     backward_feature /= cnt
+#                     forward_feature /= cnt
+#                     weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+#     #                 A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+
+#     #                 bw_loss = (bw_loss_false + bw_loss_true)/ len(labels)
+#                     A_conf_la = (sigmoid(torch.mul(forward_feature, weights) + 0.3).sum(dim=1, keepdim=True)) # BS x 1 x 8x 8
+
+#                     bw_loss_false = torch.sum(A_conf_la / (last_size * last_size))
+
+                    sigmoid =  nn.Sigmoid()
+
+                    # bw_loss = bw_loss_false / (bw_loss_true + 0.0000001)
+                    if self.bw_loss == 'simple':
+                        bw_loss = bw_loss_false / (bw_loss_true+bw_loss_false)
+                    elif self.bw_loss == 'exponential':
+                        bw_loss = torch.exp(bw_loss_false) / (torch.exp(bw_loss_true)+torch.exp(bw_loss_false))
+                    elif self.bw_loss == 'exponential_and_temperature':
+                        bw_loss = torch.exp(bw_loss_false/self.temperature) / (torch.exp(bw_loss_true/self.temperature)+torch.exp(bw_loss_false/self.temperature))
+                        
+                    bw_loss = bw_loss.requires_grad_(True).cuda()
+
+                elif self.plus == False:
+                    # last block
+                    sigmoid = nn.Sigmoid()
+                    self.populate_grads(sigmoid(logits), labels)
+                    for idx, name in enumerate(self.grad_layers):
+                        if idx == 0:
+                            backward_feature = self.backward_features[name]
+                            forward_feature  = self.feed_forward_features[name] # backward_feature = dY_c / dF_{ij}^k
+                            weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1) # BS x 256 x 1 x 1
+                            # sum dimension = 1 -> 1st dimension reduction -> image 1장당 attention map 1장이 나오도록 함. 
+                            A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8 x 8 
+                            #self.save_cam(A_conf_in[0])
+
+                        else:
+                            #print(name)
+                            backward_feature = self.backward_features[name]
+                            forward_feature = self.feed_forward_features[name]
+                            weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                            A_t_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 4 x 4
+
+                    labels = torch.ones((len(labels), 10), dtype=torch.float32).cuda() - labels
+                    self.populate_grads(logits, labels)
+                    for idx, name in enumerate(self.grad_layers):
+                        if idx == 0:
+                            backward_feature = self.backward_features[name]
+                            forward_feature  = self.feed_forward_features[name] # backward_feature = dY_c / dF_{ij}^k
+                            weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1) # BS x 256 x 1 x 1
+                            # sum dimension = 1 -> 1st dimension reduction -> image 1장당 attention map 1장이 나오도록 함. 
+                            A_t_in = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 8 x 8 
+                            #self.save_cam(A_conf_in[0])
+
+                        else:
+                            #print(name)
+                            backward_feature = self.backward_features[name]
+                            forward_feature = self.feed_forward_features[name]
+                            weights = F.adaptive_avg_pool2d(F.relu(backward_feature), 1)
+                            A_conf_la = F.relu(torch.mul(forward_feature, weights).sum(dim=1, keepdim=True)) # BS x 1 x 4 x 4
+
+                    L_as_la, mask_in = self.loss_attention_separation(A_t_la, A_conf_la)
+
+                    L_ac_in = 0
+                    L_as_in = 0              
+
+            # predictions, Loss AS_last_layer, Loss AS_in_layer, Loss AC_in_layer, heatmap as per paper
+            if self.plus == False:
+                return logits, L_as_la, L_as_in, L_ac_in, A_t_la, A_conf_la
+            else:
+                return logits, L_as_la, L_as_in, L_ac_in, A_t_la, A_conf_la, bw_loss
         
       
 # def sfocus18(dataset, num_classes, pretrained=False, plus = False, **kwargs):
@@ -407,7 +551,9 @@ def sfocus18(pretrained=False, **kwargs):
     if dataset == 'CheXpert':
         num_classes = 10
     elif dataset == 'ADNI':
-        num_classes = 3       
+        num_classes = 3
+    elif dataset == 'NIH':
+        num_classes = 14
     plus = kwargs.get('plus')
     if plus == True:
         grad_layers = ['conv4_x']
@@ -415,8 +561,7 @@ def sfocus18(pretrained=False, **kwargs):
             grad_layers.append('last_blocks'+ str(i))
     else:
         grad_layers = ['conv4_x', 'conv5_x']
-    # print('kwargs in sfocus18', kwargs) # 여기서는 num class 잘 들어감
-    base = resnet.resnet18(**kwargs) # 여기서 에러가 남..
+    base = resnet.resnet18(**kwargs)
     model = SFOCUS(base, grad_layers, **kwargs)
     return model
 
@@ -425,5 +570,5 @@ if __name__ == '__main__':
     sample_x = torch.randn([5, 3, 32, 32])
     sample_y = torch.tensor([i for i in range(5)])
     model.train()
-    a, b, c, d, e = model(sample_x.cuda(), sample_y.cuda())
-    print(a, b, c, d, e.shape)
+    #a, b, c, d, e = model(sample_x.cuda(), sample_y.cuda())
+    #print(a, b, c, d, e.shape)

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=BWexptemp        # Job name
+#SBATCH --job-name=NIH_BWexptemp        # Job name
 #SBATCH --nodes=1                      # Total # of nodes
 #SBATCH --nodelist=node1
 #SBATCH --ntasks-per-node=1          # # of tasks per node
@@ -14,4 +14,4 @@
 source /usr/anaconda3/etc/profile.d/conda.sh
 conda activate stella_mm
 
-python main.py --mask False --base_path /scratch/connectome/stellasybae/ICASC- --experiment_name 231201_CheXpert_bw_loss_exponential_and_temperature5_depth1 --batch-size 128 --epochs 20 --layer_depth 1 --dataset CheXpert --bw_loss_setting exponential --temperature 5
+python main.py --mask False --base_path /scratch/connectome/stellasybae/ICASC- --experiment_name 231211_NIH_bw_loss_exponential_and_temperature5_depth1 --batch-size 128 --epochs 20 --layer_depth 1 --dataset NIH --bw_loss_setting exponential --temperature 5

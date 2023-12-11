@@ -107,7 +107,7 @@ def main():
     # define loss function (criterion) and optimizer
     if args.dataset == 'ImageNet':
         criterion = nn.CrossEntropyLoss().cuda()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset == 'ADNI':
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset == 'ADNI' or args.dataset == 'NIH':
         criterion = torch.nn.BCEWithLogitsLoss().cuda()
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
@@ -188,12 +188,15 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
     top1 = AverageMeter()
     top5 = AverageMeter()
     black_and_white_losses = AverageMeter()
+    # h_scores = AverageMeter()
 
     train_loader_examples_num = len(train_loader.dataset)
     if args.dataset == 'CheXpert':
         label_dim=10
     elif args.dataset=='ADNI': 
         label_dim=3
+    elif args.dataset=='NIH':
+        label_dim=14
     probs = np.zeros((train_loader_examples_num, label_dim), dtype = np.float32)
     gt = np.zeros((train_loader_examples_num, label_dim), dtype = np.float32)
     k = 0
@@ -202,13 +205,14 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
     model.train()
 
     end = time.time()
-    for i, (inputs, target) in enumerate(train_loader):
+    for i, (name, inputs, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
         optimizer.zero_grad()
         
         target = target.cuda()
         inputs = inputs.cuda()
+        # print('shape of input {0} is: {1}'.format(name, inputs.shape))
 
         if args.mask == True:
             output, l1, l2, l3, hmaps, _, bw = mask_model(inputs, target)
@@ -222,6 +226,8 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         else:
             output, l1, l2, l3, _, _, bw = model(inputs, target)
             loss = criterion(output, target) + l1 + l2 + l3 + bw
+            print('bw', bw)
+            
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(args.dataset, output.data, target, topk=(1, 5))
@@ -229,6 +235,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         top1.update(prec1[0], inputs.size(0))
         top5.update(prec5[0], inputs.size(0))
         black_and_white_losses.update(bw.item(), inputs.size(0))
+        # h_scores.update(h_score.item(), inputs.size(0))
 
         
         # compute gradient and do SGD step
@@ -256,7 +263,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         "Train Top 1 ACC":top1.avg,
         "Train Top 5 ACC":top5.avg,
     }) 
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI': 
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI' or args.dataset == 'NIH': 
         auc = roc_auc_score(gt, probs)
         print("Training AUC: {}". format(auc))
         wandb.log({
@@ -264,6 +271,7 @@ def train(train_loader, model, criterion, optimizer, epoch, dir, mask_model = No
         "Train loss":losses.avg,
         "train AUC":auc,
         "train BW loss": black_and_white_losses.avg
+        #"train H score" : h_scores.avg
     })   
     
 def mask_img(imgs, grad_cam_map):
@@ -307,6 +315,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
     top1 = AverageMeter()
     top5 = AverageMeter()
     black_and_white_losses = AverageMeter()
+    # h_scores = AverageMeter()
 
     global probs 
     global gt
@@ -317,6 +326,8 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         label_dim=10
     elif args.dataset=='ADNI': 
         label_dim=3
+    elif args.dataset=='NIH':
+        label_dim = 14
     probs = np.zeros((val_loader_examples_num, label_dim), dtype = np.float32)
     gt = np.zeros((val_loader_examples_num, label_dim), dtype = np.float32)
     k = 0
@@ -324,7 +335,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
     # switch to evaluate mode
     model.eval()
     end = time.time()
-    for i, (inputs, target) in enumerate(val_loader):
+    for i, (name, inputs, target) in enumerate(val_loader):
         target = target.cuda()
         inputs = inputs.cuda()
         
@@ -334,6 +345,8 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
             loss = criterion(output, target)+l1 + l2 + l3
         else:
             output, l1, l2, l3, hmaps, _, bw = model(inputs, target)
+            print('valid bw', bw)
+            
             loss = criterion(output, target)+l1+l2+l3+bw
         # measure accuracy and record loss
         prec1, prec5 = accuracy(args.dataset, output.data, target, topk=(1, 5))
@@ -341,6 +354,8 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         top1.update(prec1[0], inputs.size(0))
         top5.update(prec5[0], inputs.size(0))
         black_and_white_losses.update(bw.item(), inputs.size(0))
+        # h_scores.update(h_score.item(), inputs.size(0))
+        
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -365,7 +380,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         f = open(dir + "/performance.txt", "a")
         f.write(str(top1.avg.item()) + "\n")
         f.close()
-    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI': 
+    elif args.dataset == 'CheXpert' or args.dataset == 'MIMIC' or args.dataset=='ADNI' or args.dataset=='NIH': 
         auc = roc_auc_score(gt, probs)
         print("ValidAUC: {}". format(auc))
         wandb.log({
@@ -373,6 +388,7 @@ def validate(val_loader, model, criterion, unorm, epoch, PATH, dir):
         "Valid loss":losses.avg,
         "valid AUC":auc,
         "valid BW loss": black_and_white_losses.avg
+        #"valid H score" : h_scores.avg
         })
         f = open(dir + "/performance.txt", "a")
         f.write(str(auc) + "\n")
@@ -427,7 +443,7 @@ def accuracy(dataset, output, target, topk=(1,)):
             correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
     
-    elif dataset == 'CheXpert' or dataset == 'MIMIC' or dataset == 'ADNI':
+    elif dataset == 'CheXpert' or dataset == 'MIMIC' or dataset == 'ADNI' or dataset=='NIH':
         
         # For AUC ROC
         probs[k: k + output.shape[0], :] = output.cpu()

@@ -13,7 +13,7 @@ def get_mean_var_classes(name):
     if name == 'CheXpert':
         return 0.485, 0.229, 10
     if name == 'NIH':
-        return (0.485, 0.456, 0.406), (0.229, 0.224, 0.225), 14
+        return 0.485, 0.229, 14
     if name == 'ADNI':
         return 0.485, 0.229, 3
     return None
@@ -83,8 +83,9 @@ def get_datasets(name):
         test = ChexpertTestDataset(transform=transform)
     elif name == 'NIH':
         sampling_num = 86336
-        normalize = transforms.Normalize(mean, var)
+        normalize = transforms.Normalize([mean], [var])
         transform = transforms.Compose([
+                                    transforms.Grayscale(num_output_channels=1),
                                     transforms.Resize([150,150]),
                                     transforms.ToTensor(),
                                     normalize])

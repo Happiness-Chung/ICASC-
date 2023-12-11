@@ -101,6 +101,8 @@ class ResNet(nn.Module):
             self.num_classes = 10
         elif kwargs.get('dataset') == 'ADNI':
             self.num_classes = 3
+        elif kwargs.get('dataset') == 'NIH':
+            self.num_classes = 14
         self.plus = kwargs.get('plus')
         self.last_blocks = []
         

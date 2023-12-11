@@ -31,72 +31,72 @@ class NIHTrainDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.df = self.get_df()
-        self.make_pkl_dir(config.pkl_dir_path)
+        #self.make_pkl_dir(config.pkl_dir_path)
         self.the_chosen = indices
         
         self.disease_cnt = [0]*14
         self.all_classes = ['Cardiomegaly','Emphysema','Effusion','Hernia','Infiltration','Mass','Nodule','Atelectasis','Pneumothorax','Pleural_Thickening','Pneumonia','Fibrosis','Edema','Consolidation', 'No Finding']
         
-        if not os.path.exists(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path)):
+#         if not os.path.exists(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path)):
 
-            self.train_val_df = self.get_train_val_df()
-            # pickle dump the train_val_df
-            with open(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path), 'wb') as handle:
-                pickle.dump(self.train_val_df, handle, protocol = pickle.HIGHEST_PROTOCOL)
-        else:
-            # pickle load the train_val_df
-            with open(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path), 'rb') as handle:
-                self.train_val_df = pickle.load(handle)
+#             self.train_val_df = self.get_train_val_df()
+#             # pickle dump the train_val_df
+#             with open(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path), 'wb') as handle:
+#                 pickle.dump(self.train_val_df, handle, protocol = pickle.HIGHEST_PROTOCOL)
+#         else:
+#             # pickle load the train_val_df
+#             with open(os.path.join(config.pkl_dir_path, config.train_val_df_pkl_path), 'rb') as handle:
+#                 self.train_val_df = pickle.load(handle)
         
-        self.new_df = self.train_val_df.iloc[self.the_chosen, :] # this is the sampled train_val data
+#         self.new_df = self.train_val_df.iloc[self.the_chosen, :] # this is the sampled train_val data
     
-        if not os.path.exists(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path)):
-            # pickle dump the classes list
-            with open(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path), 'wb') as handle:
-                pickle.dump(self.all_classes, handle, protocol = pickle.HIGHEST_PROTOCOL)
-                print('\n{}: dumped'.format(config.disease_classes_pkl_path))
-        else:
-            pass
+#         if not os.path.exists(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path)):
+#             # pickle dump the classes list
+#             with open(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path), 'wb') as handle:
+#                 pickle.dump(self.all_classes, handle, protocol = pickle.HIGHEST_PROTOCOL)
+#                 print('\n{}: dumped'.format(config.disease_classes_pkl_path))
+#         else:
+#             pass
 
-        for i in range(len(self.new_df)):
-            row = self.new_df.iloc[i, :]
-            labels = str.split(row['Finding Labels'], '|')
-            for lab in labels:  
-                lab_idx = self.all_classes.index(lab)
-                if lab_idx == 14: # No Finding
-                    continue
-                self.disease_cnt[lab_idx] += 1
+#         for i in range(len(self.new_df)):
+#             row = self.new_df.iloc[i, :]
+#             labels = str.split(row['Finding Labels'], '|')
+#             for lab in labels:  
+#                 lab_idx = self.all_classes.index(lab)
+#                 if lab_idx == 14: # No Finding
+#                     continue
+#                 self.disease_cnt[lab_idx] += 1
 
-        self.total_ds_cnt = np.array(self.disease_cnt)
-        # Normalize the imbalance
-        self.imbalance = 0
-        difference_cnt = self.total_ds_cnt - self.total_ds_cnt.mean()
-        for i in range(len(difference_cnt)):
-            difference_cnt[i] = difference_cnt[i] * difference_cnt[i]        
-        for i in range(len(difference_cnt)):
-            difference_cnt[i] = difference_cnt[i] / difference_cnt.sum()
-        # Calculate the level of imbalnce
-        difference_cnt -= difference_cnt.mean()
-        for i in range(len(difference_cnt)):
-            difference_cnt[i] = (difference_cnt[i] * difference_cnt[i])
+#         self.total_ds_cnt = np.array(self.disease_cnt)
+#         # Normalize the imbalance
+#         self.imbalance = 0
+#         difference_cnt = self.total_ds_cnt - self.total_ds_cnt.mean()
+#         for i in range(len(difference_cnt)):
+#             difference_cnt[i] = difference_cnt[i] * difference_cnt[i]        
+#         for i in range(len(difference_cnt)):
+#             difference_cnt[i] = difference_cnt[i] / difference_cnt.sum()
+#         # Calculate the level of imbalnce
+#         difference_cnt -= difference_cnt.mean()
+#         for i in range(len(difference_cnt)):
+#             difference_cnt[i] = (difference_cnt[i] * difference_cnt[i])
     
-        self.imbalance = 1 / difference_cnt.sum()
+#         self.imbalance = 1 / difference_cnt.sum()
 
-    def get_ds_cnt(self, c_num):
+#     def get_ds_cnt(self, c_num):
 
-        raw_pos_freq = self.total_ds_cnt
-        raw_neg_freq = self.total_ds_cnt.sum() - self.total_ds_cnt
+#         raw_pos_freq = self.total_ds_cnt
+#         raw_neg_freq = self.total_ds_cnt.sum() - self.total_ds_cnt
 
-        return raw_pos_freq, raw_neg_freq
+#         return raw_pos_freq, raw_neg_freq
             
-    def compute_class_freqs(self):
-        # total number of patients (rows)
-        labels = self.train_val_df ## What is the shape of this???
-        N = labels.shape[0]
-        positive_frequencies = (labels.sum(axis = 0))/N
-        negative_frequencies = 1.0 - positive_frequencies
+#     def compute_class_freqs(self):
+#         # total number of patients (rows)
+#         labels = self.train_val_df ## What is the shape of this???
+#         N = labels.shape[0]
+#         positive_frequencies = (labels.sum(axis = 0))/N
+#         negative_frequencies = 1.0 - positive_frequencies
     
-        return positive_frequencies, negative_frequencies
+#         return positive_frequencies, negative_frequencies
 
     def make_pkl_dir(self, pkl_dir_path):
         if not os.path.exists(pkl_dir_path):
@@ -119,9 +119,11 @@ class NIHTrainDataset(Dataset):
     def __getitem__(self, index):
 
         self.all_classes = ['Cardiomegaly','Emphysema','Effusion','Hernia','Infiltration','Mass','Nodule','Atelectasis','Pneumothorax','Pleural_Thickening','Pneumonia','Fibrosis','Edema','Consolidation', 'No Finding']
+        self.new_df = self.get_df()
         row = self.new_df.iloc[index, :]
         # img = cv2.imread(row['image_links'])
         img = Image.open(row['image_links'])
+        name = row['image_links'].split('/')[-1]
         labels = str.split(row['Finding Labels'], '|')
         target = torch.zeros(len(self.all_classes))
         new_target = torch.zeros(len(self.all_classes) - 1)
@@ -129,9 +131,9 @@ class NIHTrainDataset(Dataset):
             lab_idx = self.all_classes.index(lab)
             target[lab_idx] = 1            
         if self.transform is not None:
-            img = self.transform(img)
-
-        return img, target[:14]
+            gray_img = self.transform(img)
+        #print('shape of img {0} is:'.format(name), img.shape) # 갑자기 channel이 4가 되는 애가 하나 있음..
+        return name, torch.cat([gray_img,gray_img,gray_img], dim = 0), target[:14]
        
     def get_df(self):
         csv_path = os.path.join(self.data_dir, 'Data_Entry_2017.csv')
@@ -146,7 +148,7 @@ class NIHTrainDataset(Dataset):
         return merged_df
     
     def get_train_val_list(self):
-        f = open("data/NIH/train_val_list(original)", 'r')
+        f = open("data/NIH/train_val_list.txt", 'r')
         train_val_list = str.split(f.read(), '\n')
         return train_val_list
 
@@ -166,39 +168,42 @@ class NIHTestDataset(Dataset):
         self.transform = transform
         # full dataframe including train_val and test set
         self.df = self.get_df()
-        self.make_pkl_dir(config.pkl_dir_path)
+        self.test_df = self.get_test_df()
+        #self.make_pkl_dir(config.pkl_dir_path)
         self.disease_cnt = [0]*14
         self.all_classes = ['Cardiomegaly','Emphysema','Effusion','Hernia','Infiltration','Mass','Nodule','Atelectasis','Pneumothorax','Pleural_Thickening','Pneumonia','Fibrosis','Edema','Consolidation', 'No Finding']
 
         # loading the classes list
-        with open(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path), 'rb') as handle:
-            self.all_classes = pickle.load(handle) 
-        # get test_df
-        if not os.path.exists(os.path.join(config.pkl_dir_path, config.test_df_pkl_path)):
-            self.test_df = self.get_test_df()
-            with open(os.path.join(config.pkl_dir_path, config.test_df_pkl_path), 'wb') as handle:
-                pickle.dump(self.test_df, handle, protocol = pickle.HIGHEST_PROTOCOL)
-            print('\n{}: dumped'.format(config.test_df_pkl_path))
-        else:
-            # pickle load the test_df
-            with open(os.path.join(config.pkl_dir_path, config.test_df_pkl_path), 'rb') as handle:
-                self.test_df = pickle.load(handle)
+#         with open(os.path.join(config.pkl_dir_path, config.disease_classes_pkl_path), 'rb') as handle:
+#             self.all_classes = pickle.load(handle) 
+#         # get test_df
+#         if not os.path.exists(os.path.join(config.pkl_dir_path, config.test_df_pkl_path)):
+#             self.test_df = self.get_test_df()
+#             with open(os.path.join(config.pkl_dir_path, config.test_df_pkl_path), 'wb') as handle:
+#                 pickle.dump(self.test_df, handle, protocol = pickle.HIGHEST_PROTOCOL)
+#             print('\n{}: dumped'.format(config.test_df_pkl_path))
+#         else:
+#             # pickle load the test_df
+#             with open(os.path.join(config.pkl_dir_path, config.test_df_pkl_path), 'rb') as handle:
+#                 self.test_df = pickle.load(handle)
 
-        for i in range(len(self.test_df)):
-            row = self.test_df.iloc[i, :]
-            labels = str.split(row['Finding Labels'], '|')
-            for lab in labels:  
-                lab_idx = self.all_classes.index(lab)
-                if lab_idx == 14: # No Finding
-                    continue
-                self.disease_cnt[lab_idx] += 1
+#         for i in range(len(self.test_df)):
+#             row = self.test_df.iloc[i, :]
+#             labels = str.split(row['Finding Labels'], '|')
+#             for lab in labels:  
+#                 lab_idx = self.all_classes.index(lab)
+#                 if lab_idx == 14: # No Finding
+#                     continue
+#                 self.disease_cnt[lab_idx] += 1
 
     def get_ds_cnt(self):
         return self.disease_cnt
 
     def __getitem__(self, index):
+        #self.test_df = self.get_test_df()
         row = self.test_df.iloc[index, :]
         # img = cv2.imread(row['image_links'])
+        name = row['image_links'].split('/')[-1]
         img = Image.open(row['image_links'])
         labels = str.split(row['Finding Labels'], '|')
         target = torch.zeros(len(self.all_classes)) # 15
@@ -206,8 +211,8 @@ class NIHTestDataset(Dataset):
             lab_idx = self.all_classes.index(lab)
             target[lab_idx] = 1     
         if self.transform is not None:
-            img = self.transform(img)
-        return img, target[:14]
+            gray_img = self.transform(img)
+        return name, torch.cat([gray_img,gray_img,gray_img], dim = 0), target[:14]
 
     def make_pkl_dir(self, pkl_dir_path):
         if not os.path.exists(pkl_dir_path):
