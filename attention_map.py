@@ -121,15 +121,21 @@ def get_hscore(true,false):
         h_score = 0
     return h_score
 
-def create_binary_mask(heatmap, threshold=0.5):
+def create_binary_mask(heatmap, threshold=0.1):
     # Grad-CAM 히트맵을 이진 마스크로 변환
     binary_mask = np.where(heatmap >= threshold, 1, 0)
     return binary_mask
 
 def calculate_iou(binary_mask, x, y, h, w):
     # BBOX를 이진 마스크로 변환
-    bbox_mask = np.zeros_like(binary_mask)
-    bbox_mask[y:y+h, x:x+w] = 1
+    bbox_mask = np.zeros_like(binary_mask) # (3, 150, 150)
+    # print(bbox_mask.shape)
+    #print(x,w,y,h)
+    x = x*150/1024
+    y = y*150/1024
+    h = h*150/1024
+    w = w*150/1024
+    bbox_mask[:, round(x):round(x+w), round(y):round(y+h)] = 1
     # 교차 영역과 합집합 영역 계산
     intersection = np.logical_and(binary_mask, bbox_mask).sum()
     union = np.logical_or(binary_mask, bbox_mask).sum()
@@ -146,9 +152,9 @@ def save_cam(name, torch_img, grad_cam_map, index, args, conf = False):
     if args.dataset == 'NIH':
         bbox_df = pd.read_csv('./data/NIH/BBox_List_2017.csv')
         file_name = './results/'+args.experiment_name+'/'+args.experiment_name+'_IOU.txt'
-        content = ''
-        with open(file_name, 'w') as file:
-            file.write(content)
+#         content = ''
+#         with open(file_name, 'w') as file:
+#             file.write(content)
     # print(grad_cam_map)
     grad_cam_map = grad_cam_map[0].unsqueeze(dim=0)
     grad_cam_map = F.interpolate(grad_cam_map, size=(150, 150), mode='bilinear', align_corners=False) # (1, 1, W, H)
